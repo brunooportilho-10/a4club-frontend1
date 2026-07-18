@@ -8,7 +8,7 @@ export default function LoginPage() {
   const router = useRouter()
   const { user, login, isLoading, error } = useAuth()
   const [email, setEmail] = useState('camila@a4digital.com.br')
-  const [password, setPassword] = useState('••••••••')
+  const [password, setPassword] = useState('')
   const [localError, setLocalError] = useState('')
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLocalError('')
+    setLocalError(err.message || 'Erro ao fazer login')
     try {
       await login(email, password)
       router.push('/')
