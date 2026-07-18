@@ -20,12 +20,12 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLocalError(err.message || 'Erro ao fazer login')
+    setLocalError('')
     try {
       await login(email, password)
       router.push('/')
     } catch (err: any) {
-      setLocalError(err.response?.data?.erro || 'Erro ao fazer login')
+      setLocalError(err.message || 'Erro ao fazer login')
     }
   }
 
