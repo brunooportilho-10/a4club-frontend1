@@ -1,237 +1,362 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
-import Header from '@/components/Header'
 import { useAuth } from '@/lib/auth'
-import { admin } from '@/lib/api'
+import api, { admin } from '@/lib/api'
 
-interface Drive {
+interface Pasta {
   id: string
-  name: string
+  nome: string
+  tipo: string
+  dono?: string | null
 }
 
-interface JobStatus {
+interface Job {
   id: string
+  pastaNome?: string
   status: string
-  totalArquivos: number
-  concluidos: number
-  erros: number
-  percentualConcluido: number
-  logs: Array<{ nivel: string; mensagem: string; criadoEm: string }>
+  total?: number
+  processados?: number
+  importados?: number
+  pulados?: number
+  erros?: number
+  mensagem?: string
+  errosLog?: string[]
+  iniciadoEm?: string
 }
 
 interface Stats {
-  stats: Array<{ status: string; _count: number; _sum: { tamanho: string } }>
-  importacaoEmAndamento: JobStatus | null
+  totalArquivos: number
+  totalUsuarios: number
+  importacaoAtiva?: string | null
 }
+
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  'https://a4club-backend-novo-production.up.railway.app'
 
 export default function AdminPage() {
   const router = useRouter()
-  const { user, hydrate } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [drives, setDrives] = useState<Drive[]>([])
+  const { user, token } = useAuth()
+  const [driveConectado, setDriveConectado] = useState<boolean | null>(null)
+  const [pastas, setPastas] = useState<Pasta[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
-  const [selectedDrive, setSelectedDrive] = useState<string>('')
-  const [importing, setImporting] = useState(false)
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
+  const [job, setJob] = useState<Job | null>(null)
+  const [historico, setHistorico] = useState<Job[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    hydrate()
+    useAuth.getState().hydrate()
+  }, [])
+
+  const carregarTudo = useCallback(async () => {
+    setErro('')
+    try {
+      const st = await api.get('/admin/drive/status')
+      setDriveConectado(!!st.data.conectado)
+      if (st.data.conectado) {
+        const dr = await admin.drives()
+        setPastas(dr.data.pastas || [])
+      }
+      const s = await admin.stats()
+      setStats(s.data)
+      const js = await admin.jobs()
+      setHistorico(js.data.jobs || [])
+      // Se ha importacao ativa, retoma o acompanhamento
+      if (s.data.importacaoAtiva) {
+        acompanharJob(s.data.importacaoAtiva)
+      }
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao carregar dados do servidor')
+    } finally {
+      setCarregando(false)
+    }
   }, [])
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login')
-      return
-    }
+    if (!token) return
+    carregarTudo()
+  }, [token, carregarTudo])
 
-    const fetchData = async () => {
+  function acompanharJob(jobId: string) {
+    if (pollRef.current) clearInterval(pollRef.current)
+    const buscar = async () => {
       try {
-        const [drivesRes, statsRes] = await Promise.all([
-          admin.drives(),
-          admin.stats(),
-        ])
-        setDrives(drivesRes.data.drives || [])
-        setStats(statsRes.data)
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [user, router])
-
-  // Poll job status
-  useEffect(() => {
-    if (!jobId) return
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await admin.jobStatus(jobId)
-        setJobStatus(res.data)
-
-        if (res.data.status === 'CONCLUIDO' || res.data.status === 'ERRO') {
-          clearInterval(interval)
-          setImporting(false)
+        const r = await admin.jobStatus(jobId)
+        const j: Job = r.data.job
+        setJob(j)
+        if (['concluido', 'erro', 'cancelado', 'interrompido'].includes(j.status)) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          const s = await admin.stats()
+          setStats(s.data)
+          const js = await admin.jobs()
+          setHistorico(js.data.jobs || [])
         }
-      } catch (error) {
-        console.error('Erro ao atualizar job:', error)
+      } catch (e) {
+        /* mantem o poll */
       }
-    }, 2000)
-
-    return () => clearInterval(interval)
-  }, [jobId])
-
-  const handleImport = async () => {
-    if (!selectedDrive) {
-      alert('Selecione um Shared Drive')
-      return
     }
+    buscar()
+    pollRef.current = setInterval(buscar, 2500)
+  }
 
-    setImporting(true)
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [])
+
+  async function sincronizar(pasta: Pasta) {
+    setErro('')
     try {
-      const drive = drives.find((d) => d.id === selectedDrive)
-      const res = await admin.importar(selectedDrive, drive?.name || 'Shared Drive')
-      setJobId(res.data.jobId)
-    } catch (error) {
-      console.error('Erro ao iniciar importação:', error)
-      setImporting(false)
+      const r = await admin.importar(pasta.id, pasta.nome)
+      acompanharJob(r.data.jobId)
+    } catch (e: any) {
+      const jid = e.response?.data?.jobId
+      if (jid) {
+        acompanharJob(jid)
+      } else {
+        setErro(e.response?.data?.erro || 'Erro ao iniciar sincronizacao')
+      }
     }
   }
 
-  if (!user || loading) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">Carregando...</div>
-        </div>
-      </div>
-    )
+  async function pausar() {
+    if (!job) return
+    try { await admin.jobPause(job.id) } catch (e) { /* status vem no poll */ }
+  }
+
+  async function retomar() {
+    if (!job) return
+    try { await admin.jobResume(job.id) } catch (e) { /* status vem no poll */ }
+  }
+
+  const progresso =
+    job && job.total ? Math.round(((job.processados || 0) / job.total) * 100) : 0
+
+  const rodando = job && ['iniciando', 'listando', 'executando', 'pausado'].includes(job.status)
+
+  const statusLabel: Record<string, string> = {
+    iniciando: 'Iniciando...',
+    listando: 'Varrendo pastas do Drive...',
+    executando: 'Importando...',
+    pausado: 'Pausado',
+    concluido: 'Concluído',
+    erro: 'Erro',
+    cancelado: 'Cancelado',
+    interrompido: 'Interrompido',
   }
 
   return (
-    <div className="flex">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-h-screen">
-        <Header />
+    <div className="min-h-screen bg-bg p-6 sm:p-10">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">
+              Painel <span className="text-primary">Admin</span>
+            </h1>
+            <p className="text-muted text-sm mt-1">
+              Importação de arquivos do Google Drive para o A4 CLUB
+            </p>
+          </div>
+          <button
+            onClick={() => router.push('/')}
+            className="text-sm font-semibold text-primary hover:underline"
+          >
+            ← Voltar ao catálogo
+          </button>
+        </div>
 
-        <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
-          <h1 className="text-4xl font-bold mb-2">Painel Administrativo</h1>
-          <p className="text-muted text-lg mb-8">
-            Gerenciar importações de Google Drive
-          </p>
+        {erro && (
+          <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm mb-6">
+            {erro}
+          </div>
+        )}
 
-          {/* Importação */}
-          <div className="bg-white rounded-2xl p-8 shadow-sm mb-8">
-            <h2 className="text-2xl font-bold mb-6">Importar Shared Drive</h2>
+        {/* Estatísticas */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-2xl border border-border p-5">
+            <div className="text-3xl font-bold text-primary">
+              {stats ? stats.totalArquivos : '—'}
+            </div>
+            <div className="text-sm text-muted mt-1">Arquivos no clube</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-border p-5">
+            <div className="text-3xl font-bold text-primary">
+              {stats ? stats.totalUsuarios : '—'}
+            </div>
+            <div className="text-sm text-muted mt-1">Usuários</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-border p-5">
+            <div className="text-3xl font-bold">
+              {driveConectado === null ? '—' : driveConectado ? '🟢' : '🔴'}
+            </div>
+            <div className="text-sm text-muted mt-1">Google Drive</div>
+          </div>
+        </div>
 
-            <div className="grid md:grid-cols-2 gap-6 mb-6">
+        {/* Progresso da importação */}
+        {job && (
+          <div className="bg-white rounded-2xl border border-border p-6 mb-8">
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <label className="block text-sm font-semibold mb-2">Selecione o Shared Drive</label>
-                <select
-                  value={selectedDrive}
-                  onChange={(e) => setSelectedDrive(e.target.value)}
-                  disabled={importing}
-                  className="w-full border border-border rounded-lg px-4 py-3 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10"
-                >
-                  <option value="">-- Selecione --</option>
-                  {drives.map((drive) => (
-                    <option key={drive.id} value={drive.id}>
-                      {drive.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="font-bold">
+                  {job.pastaNome || 'Importação'} —{' '}
+                  <span className="text-primary">
+                    {statusLabel[job.status] || job.status}
+                  </span>
+                </div>
+                {job.mensagem && (
+                  <div className="text-sm text-muted mt-1">{job.mensagem}</div>
+                )}
               </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">&nbsp;</label>
-                <button
-                  onClick={handleImport}
-                  disabled={importing || !selectedDrive}
-                  className="w-full grad-btn text-white font-bold py-3 rounded-lg transition hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {importing ? 'Importando...' : '📥 Importar Agora'}
-                </button>
-              </div>
+              {rodando && (
+                <div className="flex gap-2">
+                  {job.status === 'pausado' ? (
+                    <button
+                      onClick={retomar}
+                      className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold"
+                    >
+                      ▶ Retomar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={pausar}
+                      className="px-4 py-2 rounded-lg border border-border text-sm font-semibold"
+                    >
+                      ⏸ Pausar
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
-            {importing && jobStatus && (
-              <div className="bg-bg rounded-lg p-6">
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold">
-                      {jobStatus.status === 'MAPEANDO' && '📍 Mapeando Drive...'}
-                      {jobStatus.status === 'BAIXANDO' && '⬇️ Baixando arquivos...'}
-                      {jobStatus.status === 'CONCLUIDO' && '✅ Importação concluída!'}
-                      {jobStatus.status === 'ERRO' && '❌ Erro na importação'}
-                    </span>
-                    <span className="text-sm text-muted">
-                      {jobStatus.percentualConcluido}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-border rounded-full h-3 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-primary to-primary-2 h-full transition-all"
-                      style={{ width: `${jobStatus.percentualConcluido}%` }}
-                    ></div>
-                  </div>
-                  <div className="mt-2 text-xs text-muted">
-                    {jobStatus.concluidos} de {jobStatus.totalArquivos} arquivos
-                  </div>
-                </div>
+            <div className="w-full h-3 bg-bg rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-primary transition-all duration-500"
+                style={{ width: progresso + '%' }}
+              />
+            </div>
 
-                <div className="bg-white rounded-lg p-4 h-64 overflow-y-auto text-xs font-mono">
-                  {jobStatus.logs.map((log, i) => (
-                    <div key={i} className="mb-1">
-                      <span
-                        className={
-                          log.nivel === 'ERRO'
-                            ? 'text-pink'
-                            : log.nivel === 'AVISO'
-                            ? 'text-amber'
-                            : 'text-green'
-                        }
-                      >
-                        [{log.nivel}]
-                      </span>{' '}
-                      {log.mensagem}
-                    </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
+              <span>
+                {job.processados || 0} / {job.total || '?'} processados ({progresso}%)
+              </span>
+              <span className="text-green-600">✔ {job.importados || 0} importados</span>
+              <span>↷ {job.pulados || 0} pulados</span>
+              {(job.erros || 0) > 0 && (
+                <span className="text-pink">✖ {job.erros} erros</span>
+              )}
+            </div>
+
+            {job.errosLog && job.errosLog.length > 0 && (
+              <details className="mt-3 text-xs text-muted">
+                <summary className="cursor-pointer font-semibold">
+                  Ver erros ({job.errosLog.length})
+                </summary>
+                <ul className="mt-2 space-y-1">
+                  {job.errosLog.map((e, i) => (
+                    <li key={i}>{e}</li>
                   ))}
-                </div>
-              </div>
+                </ul>
+              </details>
             )}
           </div>
+        )}
 
-          {/* Stats */}
-          {stats && (
-            <div className="bg-white rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-bold mb-6">Estatísticas</h2>
+        {/* Conexão com o Drive */}
+        {driveConectado === false && (
+          <div className="bg-white rounded-2xl border border-border p-6 mb-8 text-center">
+            <div className="text-lg font-bold mb-2">Google Drive não conectado</div>
+            <p className="text-sm text-muted mb-4">
+              Conecte o Drive para importar os arquivos de arte.
+            </p>
+            <a
+              href={BACKEND_URL + '/auth/google'}
+              className="inline-block px-6 py-3 rounded-lg bg-primary text-white font-bold"
+            >
+              Conectar Google Drive
+            </a>
+          </div>
+        )}
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {stats.stats.map((stat, i) => (
-                  <div key={i} className="bg-bg rounded-lg p-4">
-                    <div className="text-sm text-muted mb-2">
-                      {stat.status === 'CONCLUIDO' && '✅ Concluído'}
-                      {stat.status === 'PENDENTE' && '⏳ Pendente'}
-                      {stat.status === 'ERRO' && '❌ Erro'}
-                      {stat.status === 'IGNORADO' && '⊘ Ignorado'}
+        {/* Lista de pastas */}
+        {driveConectado && (
+          <div className="bg-white rounded-2xl border border-border p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg">Pastas do Drive</h2>
+              <button
+                onClick={carregarTudo}
+                className="text-sm text-primary font-semibold hover:underline"
+              >
+                ↻ Atualizar lista
+              </button>
+            </div>
+            {carregando ? (
+              <div className="text-muted text-sm">Carregando...</div>
+            ) : pastas.length === 0 ? (
+              <div className="text-muted text-sm">
+                Nenhuma pasta encontrada no Drive.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {pastas.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between border border-border rounded-lg px-4 py-3"
+                  >
+                    <div>
+                      <div className="font-semibold">📁 {p.nome}</div>
+                      <div className="text-xs text-muted">
+                        {p.tipo === 'compartilhada'
+                          ? 'Compartilhada' + (p.dono ? ' por ' + p.dono : '')
+                          : p.tipo === 'shared_drive'
+                          ? 'Drive compartilhado'
+                          : 'Meu Drive'}
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold">{stat._count}</div>
-                    <div className="text-xs text-muted mt-1">
-                      {stat._sum.tamanho}
-                    </div>
+                    <button
+                      onClick={() => sincronizar(p)}
+                      disabled={!!rodando}
+                      className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ⟳ Sincronizar
+                    </button>
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Histórico */}
+        {historico.length > 0 && (
+          <div className="bg-white rounded-2xl border border-border p-6">
+            <h2 className="font-bold text-lg mb-4">Últimas importações</h2>
+            <div className="space-y-2 text-sm">
+              {historico.map((h) => (
+                <div
+                  key={h.id}
+                  className="flex items-center justify-between border-b border-border pb-2 last:border-0"
+                >
+                  <div>
+                    <span className="font-semibold">{h.pastaNome}</span>{' '}
+                    <span className="text-muted">
+                      — {statusLabel[h.status] || h.status}
+                    </span>
+                  </div>
+                  <div className="text-muted text-xs">
+                    ✔ {h.importados || 0} · ↷ {h.pulados || 0} · ✖ {h.erros || 0}
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-        </main>
+          </div>
+        )}
       </div>
     </div>
   )
