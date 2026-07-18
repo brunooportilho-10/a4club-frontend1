@@ -40,4 +40,35 @@ function traduzErro(code: string): string {
   return mensagens[code] || 'Erro ao fazer login'
 }
 
-function
+function mapUser(fbUser: { uid: string; email: string | null }): User {
+  return { id: fbUser.uid, email: fbUser.email || '' }
+}
+
+let hydrated = false
+
+export const useAuth = create<AuthStore>((set) => ({
+  user: null,
+  token: null,
+  isLoading: false,
+  error: null,
+
+  register: async (email: string, password: string) => {
+    set({ isLoading: true, error: null })
+    try {
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, email, password)
+      const token = await cred.user.getIdToken()
+      const user = mapUser(cred.user)
+      Cookies.set('auth_token', token)
+      Cookies.set('user', JSON.stringify(user))
+      set({ user, token, isLoading: false })
+    } catch (error: any) {
+      const message = traduzErro(error.code)
+      set({ error: message, isLoading: false })
+      throw new Error(message)
+    }
+  },
+
+  login: async (email: string, password: string) => {
+    set({ isLoading: true, error: null })
+    try {
+      const
