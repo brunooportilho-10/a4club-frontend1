@@ -1,226 +1,343 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
-import Header from '@/components/Header'
-import { ProductCard, CategoryCard, DownloadItem } from '@/components/Cards'
 import { useAuth } from '@/lib/auth'
-import { catalog } from '@/lib/api'
+import api, { catalog } from '@/lib/api'
 
 interface Arquivo {
   id: string
   nome: string
-  extensao: string
-  tamanho: string
-  pasta?: string
+  categoria?: string
+  extensao?: string
+  tamanho?: number
+  importadoEm?: string
 }
 
-interface Pasta {
-  id: string
-  nome: string
-  caminho: string
+const ICONES: Record<string, string> = {
+  ttf: '🔤', otf: '🔤',
+  png: '🖼️', jpg: '🖼️', jpeg: '🖼️', webp: '🖼️', gif: '🖼️',
+  pdf: '📄',
+  cdr: '🎨', ai: '🎨', eps: '🎨', svg: '🎨',
+  studio3: '✂️', studio: '✂️', dxf: '✂️',
+  zip: '📦', rar: '📦',
+  psd: '🖌️',
+}
+
+function icone(ext?: string) {
+  return (ext && ICONES[ext.toLowerCase()]) || '📁'
+}
+
+function tamanhoLegivel(bytes?: number) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 export default function HomePage() {
   const router = useRouter()
-  const { user, hydrate } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [categorias, setCategorias] = useState<Pasta[]>([])
-  const [novidades, setNovidades] = useState<Arquivo[]>([])
+  const { user, token, logout } = useAuth()
+  const [arquivos, setArquivos] = useState<Arquivo[]>([])
+  const [categorias, setCategorias] = useState<string[]>([])
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('')
+  const [busca, setBusca] = useState('')
+  const [resultadoBusca, setResultadoBusca] = useState<Arquivo[] | null>(null)
+  const [buscando, setBuscando] = useState(false)
+  const [carregando, setCarregando] = useState(true)
+  const [ehAdmin, setEhAdmin] = useState(false)
+  const [baixando, setBaixando] = useState<string>('')
+  const [erro, setErro] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Hidrata a sessao e redireciona se nao logado
   useEffect(() => {
-    hydrate()
+    useAuth.getState().hydrate()
+    const t = setTimeout(() => {
+      if (!useAuth.getState().token) router.push('/login')
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [router])
+
+  const carregarCatalogo = useCallback(async () => {
+    setErro('')
+    try {
+      const r = await catalog.home()
+      setArquivos(r.data.arquivos || [])
+      setCategorias(r.data.categorias || [])
+      const me = await api.get('/api/me')
+      setEhAdmin(!!me.data.admin)
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao carregar o catálogo')
+    } finally {
+      setCarregando(false)
+    }
   }, [])
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login')
+    if (!token) return
+    carregarCatalogo()
+  }, [token, carregarCatalogo])
+
+  // Busca com debounce
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!busca.trim()) {
+      setResultadoBusca(null)
+      setBuscando(false)
       return
     }
-
-    const fetchHome = async () => {
+    setBuscando(true)
+    debounceRef.current = setTimeout(async () => {
       try {
-        const response = await catalog.home()
-        setCategorias(response.data.categorias || [])
-        setNovidades(response.data.novidades || [])
-      } catch (error) {
-        console.error('Erro ao carregar home:', error)
+        const r = await catalog.search(busca.trim().toLowerCase())
+        setResultadoBusca(r.data.arquivos || [])
+      } catch (e) {
+        setResultadoBusca([])
       } finally {
-        setLoading(false)
+        setBuscando(false)
       }
+    }, 400)
+  }, [busca])
+
+  async function baixar(arq: Arquivo) {
+    setBaixando(arq.id)
+    try {
+      const r = await catalog.download(arq.id)
+      if (r.data.url) {
+        const a = document.createElement('a')
+        a.href = r.data.url
+        a.download = r.data.nome || arq.nome
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      }
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao gerar o download')
+    } finally {
+      setBaixando('')
     }
-
-    fetchHome()
-  }, [user, router])
-
-  const handleSearch = (query: string) => {
-    router.push(`/explore?q=${encodeURIComponent(query)}`)
   }
 
-  const handleProductClick = (id: string) => {
-    router.push(`/file/${id}`)
+  function sair() {
+    logout()
+    router.push('/login')
   }
 
-  const stats = [
-    { icon: '📁', label: 'Arquivos disponíveis', value: '12.458' },
-    { icon: '❤️', label: 'Favoritos', value: '156' },
-    { icon: '⬇️', label: 'Downloads', value: '892' },
-    { icon: '⭐', label: 'Avaliação média', value: '4,9' },
-  ]
+  const listaBase = resultadoBusca !== null ? resultadoBusca : arquivos
+  const lista = categoriaAtiva
+    ? listaBase.filter((a) => a.categoria === categoriaAtiva)
+    : listaBase
 
-  const mockDownloads = [
-    { name: 'Ursinho Baloeiro', size: 'ZIP • 45 MB', date: 'Hoje às 10:23', icon: '🎈' },
-    { name: 'Dinossauro Aquarela', size: 'ZIP • 38 MB', date: 'Ontem às 15:42', icon: '🦕' },
-    { name: 'Astronauta Rosa', size: 'ZIP • 52 MB', date: '24/06/2026', icon: '👩‍🚀' },
-  ]
-
-  const iconMap: { [key: string]: string } = {
-    'Caixinhas': '🎁',
-    'Kit Festa': '🏰',
-    'Topos de Bolo': '🎂',
-    'Maternidade': '🧸',
-    'Tags e Rótulos': '🏷️',
-    'Papéis Digitais': '🎨',
-    'Fontes': '🔤',
-    'Mockups': '☕',
-  }
-
-  const emojiMap: { [key: string]: string } = {
-    'Kit Safari Baby': '🦁',
-    'Stitch Aquarela': '🩵',
-    'Bailarina Encantada': '🩰',
-    'Fazendinha Baby': '🐮',
-    'Arco-íris Boho': '🌈',
-  }
-
-  if (!user || loading) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-4xl mb-4">Loading...</div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const nomeUsuario = user?.email ? user.email.split('@')[0] : ''
 
   return (
-    <div className="flex">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-h-screen">
-        <Header onSearch={handleSearch} />
+    <div className="min-h-screen bg-bg flex">
+      {/* Sidebar */}
+      <aside className="hidden lg:flex w-64 flex-col bg-sidebar text-white p-6">
+        <div className="flex items-center gap-3 mb-10">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-2 flex items-center justify-center font-bold">
+            A
+          </div>
+          <div>
+            <div className="font-bold text-lg">
+              A4<span className="text-primary-2">CLUB</span>
+            </div>
+            <div className="text-[10px] text-white/50 font-semibold tracking-wider">
+              ARQUIVOS PREMIUM
+            </div>
+          </div>
+        </div>
 
-        <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
-          {/* Greeting */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold mb-2">Olá, {user.email?.split('@')[0]}! 👋</h1>
-            <p className="text-muted text-lg">
-              Que bom ter você aqui! Prepare-se para criar projetos incríveis.
+        <nav className="space-y-1 flex-1">
+          <button
+            onClick={() => {
+              setCategoriaAtiva('')
+              setBusca('')
+            }}
+            className={
+              'w-full text-left px-4 py-3 rounded-lg font-semibold text-sm transition ' +
+              (!categoriaAtiva ? 'bg-primary text-white' : 'text-white/70 hover:bg-white/10')
+            }
+          >
+            🏠 Início
+          </button>
+          <div className="pt-4 pb-2 px-4 text-[10px] font-bold tracking-wider text-white/40">
+            CATEGORIAS
+          </div>
+          {categorias.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCategoriaAtiva(c === categoriaAtiva ? '' : c)}
+              className={
+                'w-full text-left px-4 py-2.5 rounded-lg text-sm transition ' +
+                (categoriaAtiva === c
+                  ? 'bg-primary text-white font-semibold'
+                  : 'text-white/70 hover:bg-white/10')
+              }
+            >
+              📂 {c}
+            </button>
+          ))}
+        </nav>
+
+        <div className="space-y-2 pt-6 border-t border-white/10">
+          {ehAdmin && (
+            <button
+              onClick={() => router.push('/admin')}
+              className="w-full text-left px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10"
+            >
+              ⚙️ Painel Admin
+            </button>
+          )}
+          <button
+            onClick={sair}
+            className="w-full text-left px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10"
+          >
+            🚪 Sair
+          </button>
+        </div>
+      </aside>
+
+      {/* Conteúdo */}
+      <main className="flex-1 p-6 sm:p-10 max-w-6xl mx-auto w-full">
+        {/* Topo */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between mb-8">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold">
+              Olá, <span className="text-primary">{nomeUsuario}</span>! 👋
+            </h1>
+            <p className="text-muted text-sm mt-1">
+              {arquivos.length > 0
+                ? 'Explore os arquivos do clube e baixe o que precisar.'
+                : 'Bem-vindo ao A4 CLUB.'}
             </p>
           </div>
+          {ehAdmin && (
+            <button
+              onClick={() => router.push('/admin')}
+              className="lg:hidden self-start px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold"
+            >
+              ⚙️ Admin
+            </button>
+          )}
+        </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-            {stats.map((stat, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-xl p-6 shadow-sm flex items-center gap-4"
+        {/* Busca */}
+        <div className="flex items-center gap-3 bg-white border border-border rounded-xl px-5 py-4 mb-8 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+          <span className="text-lg">🔍</span>
+          <input
+            type="text"
+            placeholder="Busque por nome do arquivo..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="flex-1 outline-none bg-transparent text-sm"
+          />
+          {busca && (
+            <button
+              onClick={() => setBusca('')}
+              className="text-muted text-sm font-semibold"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {erro && (
+          <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm mb-6">
+            {erro}
+          </div>
+        )}
+
+        {/* Chips de categoria (mobile) */}
+        {categorias.length > 0 && (
+          <div className="flex lg:hidden gap-2 flex-wrap mb-6">
+            {categorias.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategoriaAtiva(c === categoriaAtiva ? '' : c)}
+                className={
+                  'px-3 py-1.5 rounded-full text-xs font-semibold border transition ' +
+                  (categoriaAtiva === c
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white border-border text-muted')
+                }
               >
-                <div className="text-3xl">{stat.icon}</div>
-                <div>
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                  <div className="text-sm text-muted">{stat.label}</div>
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Título da seção */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-lg">
+            {buscando
+              ? 'Buscando...'
+              : resultadoBusca !== null
+              ? `Resultados para "${busca}"`
+              : categoriaAtiva
+              ? categoriaAtiva
+              : 'Adicionados recentemente'}
+          </h2>
+          <span className="text-sm text-muted">{lista.length} arquivo(s)</span>
+        </div>
+
+        {/* Grid de arquivos */}
+        {carregando ? (
+          <div className="text-muted text-sm">Carregando catálogo...</div>
+        ) : lista.length === 0 ? (
+          <div className="bg-white border border-border rounded-2xl p-10 text-center">
+            <div className="text-4xl mb-3">🗂️</div>
+            <div className="font-bold mb-1">
+              {resultadoBusca !== null
+                ? 'Nenhum arquivo encontrado'
+                : 'O catálogo ainda está vazio'}
+            </div>
+            <p className="text-sm text-muted">
+              {resultadoBusca !== null
+                ? 'Tente buscar por outro nome.'
+                : 'Os arquivos aparecerão aqui após a primeira importação.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {lista.map((a) => (
+              <div
+                key={a.id}
+                className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
+                    {icone(a.extensao)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm truncate" title={a.nome}>
+                      {a.nome}
+                    </div>
+                    <div className="text-xs text-muted mt-0.5">
+                      {(a.extensao || '').toUpperCase()}
+                      {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
+                    </div>
+                    {a.categoria && (
+                      <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                        {a.categoria}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                <button
+                  onClick={() => baixar(a)}
+                  disabled={baixando === a.id}
+                  className="w-full grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
+                >
+                  {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
+                </button>
               </div>
             ))}
           </div>
-
-          {/* Banner */}
-          <div className="grad-primary rounded-2xl p-6 md:p-8 text-white mb-10 flex items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="text-5xl">🌟</div>
-              <div>
-                <h2 className="font-bold text-2xl mb-2">Novidades da semana!</h2>
-                <p className="opacity-90">
-                  25 novos temas adicionados para você criar sem limites.
-                </p>
-              </div>
-            </div>
-            <button className="bg-white text-primary font-bold px-6 py-3 rounded-lg whitespace-nowrap hover:shadow-lg transition">
-              Ver novidades
-            </button>
-          </div>
-
-          {/* Categories */}
-          <div className="mb-12">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">Categorias em destaque</h2>
-              <a href="/categories" className="text-primary font-semibold hover:underline">
-                Ver todas
-              </a>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4">
-              {categorias.slice(0, 8).map((cat) => (
-                <CategoryCard
-                  key={cat.id}
-                  id={cat.id}
-                  name={cat.nome}
-                  icon={iconMap[cat.nome] || '📁'}
-                  count={`${Math.floor(Math.random() * 3000) + 1000} itens`}
-                  onClick={handleProductClick}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* New Releases */}
-          <div className="mb-12">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">Lançamentos em destaque</h2>
-              <a href="/new" className="text-primary font-semibold hover:underline">
-                Ver todas
-              </a>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
-              {novidades.slice(0, 5).map((arq, i) => (
-                <ProductCard
-                  key={arq.id}
-                  id={arq.id}
-                  name={arq.nome}
-                  icon={emojiMap[arq.nome] || '📦'}
-                  downloads={Math.floor(Math.random() * 400) + 100}
-                  isNew={i < 3}
-                  onClick={handleProductClick}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Recent Downloads */}
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">Seus últimos downloads</h2>
-              <a href="/downloads" className="text-primary font-semibold hover:underline">
-                Ver todas
-              </a>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {mockDownloads.map((dl, i) => (
-                <DownloadItem
-                  key={i}
-                  name={dl.name}
-                  size={dl.size}
-                  date={dl.date}
-                  icon={dl.icon}
-                />
-              ))}
-            </div>
-          </div>
-        </main>
-      </div>
+        )}
+      </main>
     </div>
   )
 }
