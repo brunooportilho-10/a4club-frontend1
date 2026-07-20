@@ -14,6 +14,11 @@ interface Arquivo {
   importadoEm?: string
 }
 
+interface Categoria {
+  nome: string
+  total: number
+}
+
 const ICONES: Record<string, string> = {
   ttf: '🔤', otf: '🔤',
   png: '🖼️', jpg: '🖼️', jpeg: '🖼️', webp: '🖼️', gif: '🖼️',
@@ -39,8 +44,10 @@ export default function HomePage() {
   const router = useRouter()
   const { user, token, logout } = useAuth()
   const [arquivos, setArquivos] = useState<Arquivo[]>([])
-  const [categorias, setCategorias] = useState<string[]>([])
+  const [categorias, setCategorias] = useState<Categoria[]>([])
   const [categoriaAtiva, setCategoriaAtiva] = useState<string>('')
+  const [arquivosCategoria, setArquivosCategoria] = useState<Arquivo[]>([])
+  const [carregandoCategoria, setCarregandoCategoria] = useState(false)
   const [busca, setBusca] = useState('')
   const [resultadoBusca, setResultadoBusca] = useState<Arquivo[] | null>(null)
   const [buscando, setBuscando] = useState(false)
@@ -79,6 +86,20 @@ export default function HomePage() {
     carregarCatalogo()
   }, [token, carregarCatalogo])
 
+  // Quando uma categoria e selecionada, busca TODOS os arquivos dela no servidor
+  useEffect(() => {
+    if (!categoriaAtiva || !token) {
+      setArquivosCategoria([])
+      return
+    }
+    setCarregandoCategoria(true)
+    api
+      .get('/api/catalogo/categoria/' + encodeURIComponent(categoriaAtiva))
+      .then((r) => setArquivosCategoria(r.data.arquivos || []))
+      .catch(() => setArquivosCategoria([]))
+      .finally(() => setCarregandoCategoria(false))
+  }, [categoriaAtiva, token])
+
   // Busca com debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -105,12 +126,9 @@ export default function HomePage() {
     try {
       const r = await catalog.download(arq.id)
       if (r.data.url) {
-        const a = document.createElement('a')
-        a.href = r.data.url
-        a.download = r.data.nome || arq.nome
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
+        // Link e de outro dominio (R2): abrir em nova aba funciona sempre.
+        // O backend ja forca o download com o nome certo via Content-Disposition.
+        window.open(r.data.url, '_blank')
       }
     } catch (e: any) {
       setErro(e.response?.data?.erro || 'Erro ao gerar o download')
@@ -124,10 +142,14 @@ export default function HomePage() {
     router.push('/login')
   }
 
-  const listaBase = resultadoBusca !== null ? resultadoBusca : arquivos
-  const lista = categoriaAtiva
-    ? listaBase.filter((a) => a.categoria === categoriaAtiva)
-    : listaBase
+  const lista =
+    resultadoBusca !== null
+      ? resultadoBusca
+      : categoriaAtiva
+      ? arquivosCategoria
+      : arquivos
+
+  const carregandoLista = buscando || (categoriaAtiva ? carregandoCategoria : carregando)
 
   const nomeUsuario = user?.email ? user.email.split('@')[0] : ''
 
@@ -167,16 +189,17 @@ export default function HomePage() {
           </div>
           {categorias.map((c) => (
             <button
-              key={c}
-              onClick={() => setCategoriaAtiva(c === categoriaAtiva ? '' : c)}
+              key={c.nome}
+              onClick={() => setCategoriaAtiva(c.nome === categoriaAtiva ? '' : c.nome)}
               className={
-                'w-full text-left px-4 py-2.5 rounded-lg text-sm transition ' +
-                (categoriaAtiva === c
+                'w-full text-left px-4 py-2.5 rounded-lg text-sm transition flex items-center justify-between ' +
+                (categoriaAtiva === c.nome
                   ? 'bg-primary text-white font-semibold'
                   : 'text-white/70 hover:bg-white/10')
               }
             >
-              📂 {c}
+              <span>📂 {c.nome}</span>
+              <span className="text-xs opacity-70">{c.total}</span>
             </button>
           ))}
         </nav>
@@ -254,16 +277,16 @@ export default function HomePage() {
           <div className="flex lg:hidden gap-2 flex-wrap mb-6">
             {categorias.map((c) => (
               <button
-                key={c}
-                onClick={() => setCategoriaAtiva(c === categoriaAtiva ? '' : c)}
+                key={c.nome}
+                onClick={() => setCategoriaAtiva(c.nome === categoriaAtiva ? '' : c.nome)}
                 className={
                   'px-3 py-1.5 rounded-full text-xs font-semibold border transition ' +
-                  (categoriaAtiva === c
+                  (categoriaAtiva === c.nome
                     ? 'bg-primary text-white border-primary'
                     : 'bg-white border-border text-muted')
                 }
               >
-                {c}
+                {c.nome} · {c.total}
               </button>
             ))}
           </div>
@@ -284,8 +307,8 @@ export default function HomePage() {
         </div>
 
         {/* Grid de arquivos */}
-        {carregando ? (
-          <div className="text-muted text-sm">Carregando catálogo...</div>
+        {carregandoLista ? (
+          <div className="text-muted text-sm">Carregando...</div>
         ) : lista.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-10 text-center">
             <div className="text-4xl mb-3">🗂️</div>
