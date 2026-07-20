@@ -9,6 +9,7 @@ interface Arquivo {
   id: string
   nome: string
   categoria?: string
+  colecao?: string | null
   extensao?: string
   tamanho?: number
   importadoEm?: string
@@ -343,9 +344,16 @@ export default function HomePage() {
                       {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
                     </div>
                     {a.categoria && (
-                      <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
-                        {a.categoria}
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                        <span className="inline-block px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                          {a.categoria}
+                        </span>
+                        {a.colecao && (
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-bg text-muted text-[11px]">
+                            {a.colecao}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
