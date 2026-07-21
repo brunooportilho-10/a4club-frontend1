@@ -53,6 +53,14 @@ export const catalog = {
   removeFavorite: (id: string) =>
     api.delete(`/api/catalogo/arquivo/${id}/favoritar`),
 }
+// ============ COMPROVANTES ============
+export const comprovantes = {
+  enviar: (nomeArquivo: string, mime: string, conteudoBase64: string) =>
+    api.post('/api/comprovante', { nomeArquivo, mime, conteudoBase64 }),
+  meus: () => api.get('/api/comprovante'),
+  doUsuario: (uid: string) => api.get(`/admin/usuarios/${uid}/comprovantes`),
+  url: (uid: string, id: string) => api.get(`/admin/usuarios/${uid}/comprovantes/${id}/url`),
+}
 // ============ ADMIN ============
 export const admin = {
   authGoogle: () => api.get('/admin/auth/google'),
@@ -68,5 +76,6 @@ export const admin = {
   setStatusUsuario: (uid: string, status: string, meses?: number) =>
     api.post(`/admin/usuarios/${uid}/status`, { status, meses }),
   excluirUsuario: (uid: string) => api.post(`/admin/usuarios/${uid}/excluir`, {}),
+  iniciarBackup: () => api.post('/admin/backup/iniciar', {}),
 }
 export default api
