@@ -46,6 +46,9 @@ export default function AdminPage() {
   const [historico, setHistorico] = useState<Job[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+  const [resetando, setResetando] = useState(false)
+  const [mostrarConfirmReset, setMostrarConfirmReset] = useState(false)
+  const [textoConfirm, setTextoConfirm] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -65,7 +68,6 @@ export default function AdminPage() {
       setStats(s.data)
       const js = await admin.jobs()
       setHistorico(js.data.jobs || [])
-      // Se ha importacao ativa, retoma o acompanhamento
       if (s.data.importacaoAtiva) {
         acompanharJob(s.data.importacaoAtiva)
       }
@@ -133,6 +135,22 @@ export default function AdminPage() {
   async function retomar() {
     if (!job) return
     try { await admin.jobResume(job.id) } catch (e) { /* status vem no poll */ }
+  }
+
+  async function confirmarReset() {
+    setResetando(true)
+    setErro('')
+    try {
+      await api.post('/admin/reset', { confirmar: 'LIMPAR TUDO' })
+      setMostrarConfirmReset(false)
+      setTextoConfirm('')
+      setJob(null)
+      await carregarTudo()
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao limpar o catálogo')
+    } finally {
+      setResetando(false)
+    }
   }
 
   const progresso =
@@ -335,7 +353,7 @@ export default function AdminPage() {
 
         {/* Histórico */}
         {historico.length > 0 && (
-          <div className="bg-white rounded-2xl border border-border p-6">
+          <div className="bg-white rounded-2xl border border-border p-6 mb-8">
             <h2 className="font-bold text-lg mb-4">Últimas importações</h2>
             <div className="space-y-2 text-sm">
               {historico.map((h) => (
@@ -357,6 +375,56 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {/* Zona de perigo */}
+        <div className="bg-white rounded-2xl border border-pink/30 p-6">
+          <h2 className="font-bold text-lg text-pink mb-2">⚠️ Zona de risco</h2>
+          <p className="text-sm text-muted mb-4">
+            Apaga TODOS os arquivos importados (Firestore + Cloudflare R2) para
+            recomeçar a importação do zero. Use apenas se os dados foram importados
+            com categorização errada e precisam ser refeitos.
+          </p>
+          {!mostrarConfirmReset ? (
+            <button
+              onClick={() => setMostrarConfirmReset(true)}
+              disabled={!!rodando}
+              className="px-4 py-2 rounded-lg border border-pink text-pink text-sm font-bold disabled:opacity-40"
+            >
+              🗑 Limpar catálogo inteiro
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm">
+                Para confirmar, digite <strong>LIMPAR TUDO</strong> abaixo:
+              </p>
+              <input
+                type="text"
+                value={textoConfirm}
+                onChange={(e) => setTextoConfirm(e.target.value)}
+                className="border border-border rounded-lg px-4 py-2 text-sm w-full max-w-xs"
+                placeholder="LIMPAR TUDO"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={confirmarReset}
+                  disabled={textoConfirm !== 'LIMPAR TUDO' || resetando}
+                  className="px-4 py-2 rounded-lg bg-pink text-white text-sm font-bold disabled:opacity-40"
+                >
+                  {resetando ? 'Limpando...' : 'Confirmar e apagar tudo'}
+                </button>
+                <button
+                  onClick={() => {
+                    setMostrarConfirmReset(false)
+                    setTextoConfirm('')
+                  }}
+                  className="px-4 py-2 rounded-lg border border-border text-sm font-semibold"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
