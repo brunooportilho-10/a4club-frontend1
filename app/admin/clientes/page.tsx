@@ -11,6 +11,7 @@ interface Usuario {
   criadoEm?: string
   validoAte?: string
   plano?: string
+  whatsapp?: string
 }
 
 const PRAZOS = [
@@ -49,6 +50,7 @@ export default function AdminClientesPage() {
   const [erro, setErro] = useState('')
   const [prazoSelecionado, setPrazoSelecionado] = useState<Record<string, number>>({})
   const [atualizandoUid, setAtualizandoUid] = useState('')
+  const [senhaGerada, setSenhaGerada] = useState<{ uid: string; senha: string } | null>(null)
   const [comprovantesAbertos, setComprovantesAbertos] = useState<Record<string, any[]>>({})
   const [carregandoComprovantesUid, setCarregandoComprovantesUid] = useState('')
 
@@ -120,6 +122,19 @@ export default function AdminClientesPage() {
       window.open(r.data.url, '_blank')
     } catch (e: any) {
       setErro(e.response?.data?.erro || 'Erro ao abrir comprovante')
+    }
+  }
+
+  async function resetarSenha(u: Usuario) {
+    if (!window.confirm(`Gerar uma nova senha para ${u.email}? A senha atual dela deixa de funcionar.`)) return
+    setAtualizandoUid(u.uid)
+    try {
+      const r = await admin.resetarSenha(u.uid)
+      setSenhaGerada({ uid: u.uid, senha: r.data.novaSenha })
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao resetar senha')
+    } finally {
+      setAtualizandoUid('')
     }
   }
 
@@ -196,6 +211,37 @@ export default function AdminClientesPage() {
                           {u.plano ? ' · plano ' + u.plano.replace('_', ' ') : ''}
                         </div>
                       )}
+                      {u.whatsapp && (
+                        <a
+                          href={'https://wa.me/55' + u.whatsapp.replace(/\D/g, '')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary font-semibold mt-0.5 inline-block hover:underline"
+                        >
+                          💬 {u.whatsapp}
+                        </a>
+                      )}
+                      {senhaGerada && senhaGerada.uid === u.uid && (
+                        <div className="mt-2 bg-primary/10 border border-primary rounded-lg px-3 py-2 text-xs">
+                          <div className="font-semibold mb-1">Senha temporária gerada:</div>
+                          <div className="flex items-center gap-2">
+                            <code className="font-mono font-bold">{senhaGerada.senha}</code>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(senhaGerada.senha)}
+                              className="text-primary underline"
+                            >
+                              copiar
+                            </button>
+                            <button
+                              onClick={() => setSenhaGerada(null)}
+                              className="text-muted"
+                            >
+                              fechar
+                            </button>
+                          </div>
+                          <div className="text-muted mt-1">Copie e envie por WhatsApp para o assinante.</div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -238,6 +284,13 @@ export default function AdminClientesPage() {
                         🚫 Bloquear
                       </button>
                     )}
+                    <button
+                      onClick={() => resetarSenha(u)}
+                      disabled={atualizandoUid === u.uid}
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold disabled:opacity-40"
+                    >
+                      🔑 Resetar senha
+                    </button>
                     <button
                       onClick={() => excluir(u)}
                       disabled={atualizandoUid === u.uid}
