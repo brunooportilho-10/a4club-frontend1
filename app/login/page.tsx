@@ -6,10 +6,16 @@ import { useAuth } from '@/lib/auth'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { user, login, isLoading, error } = useAuth()
+  const { user, login, esqueciSenha, isLoading, error } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [localError, setLocalError] = useState('')
+
+  const [mostrarEsqueciSenha, setMostrarEsqueciSenha] = useState(false)
+  const [emailReset, setEmailReset] = useState('')
+  const [enviandoReset, setEnviandoReset] = useState(false)
+  const [mensagemReset, setMensagemReset] = useState('')
+  const [erroReset, setErroReset] = useState('')
 
   useEffect(() => {
     useAuth.getState().hydrate()
@@ -26,6 +32,28 @@ export default function LoginPage() {
       router.push('/')
     } catch (err: any) {
       setLocalError(err.message || 'Erro ao fazer login')
+    }
+  }
+
+  function abrirEsqueciSenha() {
+    setEmailReset(email)
+    setMensagemReset('')
+    setErroReset('')
+    setMostrarEsqueciSenha(true)
+  }
+
+  async function enviarReset(e: React.FormEvent) {
+    e.preventDefault()
+    setErroReset('')
+    setMensagemReset('')
+    setEnviandoReset(true)
+    try {
+      await esqueciSenha(emailReset)
+      setMensagemReset('Enviamos um link de redefinição de senha para o seu e-mail.')
+    } catch (err: any) {
+      setErroReset(err.message || 'Erro ao enviar o e-mail de redefinição')
+    } finally {
+      setEnviandoReset(false)
     }
   }
 
@@ -112,67 +140,133 @@ export default function LoginPage() {
       {/* Right side - Form */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-6 sm:px-12 py-12">
         <div className="max-w-md w-full mx-auto">
-          <h2 className="text-4xl font-bold mb-2">
-            Bem-vindo de <span className="text-primary">volta!</span>
-          </h2>
-          <p className="text-muted mb-8">Faça login para acessar sua conta</p>
+          {!mostrarEsqueciSenha ? (
+            <>
+              <h2 className="text-4xl font-bold mb-2">
+                Bem-vindo de <span className="text-primary">volta!</span>
+              </h2>
+              <p className="text-muted mb-8">Faça login para acessar sua conta</p>
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="flex justify-between text-sm font-semibold mb-2">
-                <span>E-mail</span>
-              </label>
-              <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
-                <span className="text-lg">✉️</span>
-                <input
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1 outline-none bg-transparent text-sm"
-                  required
-                />
-              </div>
-            </div>
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div>
+                  <label className="flex justify-between text-sm font-semibold mb-2">
+                    <span>E-mail</span>
+                  </label>
+                  <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+                    <span className="text-lg">✉️</span>
+                    <input
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="flex-1 outline-none bg-transparent text-sm"
+                      required
+                    />
+                  </div>
+                </div>
 
-            <div>
-              <label className="flex justify-between text-sm font-semibold mb-2">
-                <span>Senha</span>
-              </label>
-              <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
-                <span className="text-lg">🔒</span>
-                <input
-                  type="password"
-                  placeholder="Sua senha"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="flex-1 outline-none bg-transparent text-sm"
-                  required
-                />
-              </div>
-            </div>
+                <div>
+                  <label className="flex justify-between text-sm font-semibold mb-2">
+                    <span>Senha</span>
+                    <button
+                      type="button"
+                      onClick={abrirEsqueciSenha}
+                      className="text-primary font-semibold"
+                    >
+                      Esqueceu sua senha?
+                    </button>
+                  </label>
+                  <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+                    <span className="text-lg">🔒</span>
+                    <input
+                      type="password"
+                      placeholder="Sua senha"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="flex-1 outline-none bg-transparent text-sm"
+                      required
+                    />
+                  </div>
+                </div>
 
-            {(error || localError) && (
-              <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm">
-                {error || localError}
-              </div>
-            )}
+                {(error || localError) && (
+                  <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm">
+                    {error || localError}
+                  </div>
+                )}
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full grad-btn text-white font-bold py-3 rounded-lg transition hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Conectando...' : 'Entrar'}
-            </button>
-          </form>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full grad-btn text-white font-bold py-3 rounded-lg transition hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? 'Conectando...' : 'Entrar'}
+                </button>
+              </form>
 
-          <p className="text-center text-sm text-muted mt-8">
-            Ainda não tem uma conta?{' '}
-            <a href="/cadastro" className="text-primary font-bold hover:underline">
-              Assine agora
-            </a>
-          </p>
+              <p className="text-center text-sm text-muted mt-8">
+                Ainda não tem uma conta?{' '}
+                <a href="/cadastro" className="text-primary font-bold hover:underline">
+                  Assine agora
+                </a>
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-4xl font-bold mb-2">
+                Redefinir <span className="text-primary">senha</span>
+              </h2>
+              <p className="text-muted mb-8">
+                Informe seu e-mail e enviaremos um link para você criar uma nova senha
+              </p>
+
+              <form onSubmit={enviarReset} className="space-y-5">
+                <div>
+                  <label className="flex justify-between text-sm font-semibold mb-2">
+                    <span>E-mail</span>
+                  </label>
+                  <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+                    <span className="text-lg">✉️</span>
+                    <input
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={emailReset}
+                      onChange={(e) => setEmailReset(e.target.value)}
+                      className="flex-1 outline-none bg-transparent text-sm"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {mensagemReset && (
+                  <div className="bg-primary/10 border border-primary text-primary px-4 py-3 rounded-lg text-sm">
+                    {mensagemReset}
+                  </div>
+                )}
+                {erroReset && (
+                  <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm">
+                    {erroReset}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={enviandoReset}
+                  className="w-full grad-btn text-white font-bold py-3 rounded-lg transition hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {enviandoReset ? 'Enviando...' : 'Enviar link de redefinição'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMostrarEsqueciSenha(false)}
+                  className="w-full text-center text-sm text-muted hover:text-primary font-semibold"
+                >
+                  ← Voltar para o login
+                </button>
+              </form>
+            </>
+          )}
         </div>
 
         <div className="mt-12 pt-8 border-t border-border flex flex-wrap justify-center gap-6 text-xs text-muted">
