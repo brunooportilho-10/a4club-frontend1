@@ -33,6 +33,15 @@ function formatarData(iso?: string) {
   return new Date(iso).toLocaleDateString('pt-BR')
 }
 
+// Dias restantes ate o vencimento (negativo se ja venceu)
+function diasAteVencer(validoAte?: string) {
+  if (!validoAte) return null
+  const diffMs = new Date(validoAte).getTime() - Date.now()
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+}
+
+const DIAS_AVISO_VENCIMENTO = 7
+
 export default function AdminClientesPage() {
   const { token } = useAuth()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
@@ -127,10 +136,20 @@ export default function AdminClientesPage() {
             {usuarios.map((u) => {
               const badge = BADGES[u.status] || BADGES.pendente
               const prazo = prazoSelecionado[u.uid] || 1
+              const dias = u.status === 'pago' ? diasAteVencer(u.validoAte) : null
+              const vencendoEmBreve = dias !== null && dias >= 0 && dias <= DIAS_AVISO_VENCIMENTO
+              const jaVencido = u.status === 'vencido' || (dias !== null && dias < 0)
+
+              const corCard = jaVencido
+                ? 'bg-pink/5 border-pink/40'
+                : vencendoEmBreve
+                ? 'bg-amber/10 border-amber/50'
+                : 'bg-white border-border'
+
               return (
                 <div
                   key={u.uid}
-                  className="border border-border rounded-xl px-4 py-4"
+                  className={'border rounded-xl px-4 py-4 transition ' + corCard}
                 >
                   <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
                     <div>
@@ -142,6 +161,7 @@ export default function AdminClientesPage() {
                       {u.status === 'pago' && u.validoAte && (
                         <div className="text-xs text-muted mt-0.5">
                           Válido até {formatarData(u.validoAte)}
+                          {vencendoEmBreve ? ` · vence em ${dias} dia(s)` : ''}
                           {u.plano ? ' · plano ' + u.plano.replace('_', ' ') : ''}
                         </div>
                       )}
