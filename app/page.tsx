@@ -20,6 +20,11 @@ interface Categoria {
   total: number
 }
 
+interface Colecao {
+  nome: string
+  total: number
+}
+
 const ICONES: Record<string, string> = {
   ttf: '🔤', otf: '🔤',
   png: '🖼️', jpg: '🖼️', jpeg: '🖼️', webp: '🖼️', gif: '🖼️',
@@ -44,21 +49,26 @@ function tamanhoLegivel(bytes?: number) {
 export default function HomePage() {
   const router = useRouter()
   const { user, token, logout } = useAuth()
-  const [arquivos, setArquivos] = useState<Arquivo[]>([])
+
+  const [arquivosRecentes, setArquivosRecentes] = useState<Arquivo[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [ehAdmin, setEhAdmin] = useState(false)
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+  const [baixando, setBaixando] = useState<string>('')
+
   const [categoriaAtiva, setCategoriaAtiva] = useState<string>('')
-  const [arquivosCategoria, setArquivosCategoria] = useState<Arquivo[]>([])
-  const [carregandoCategoria, setCarregandoCategoria] = useState(false)
+  const [colecoes, setColecoes] = useState<Colecao[]>([])
+  const [totalSoltos, setTotalSoltos] = useState(0)
+  const [colecaoAtiva, setColecaoAtiva] = useState<string>('')
+  const [arquivosPasta, setArquivosPasta] = useState<Arquivo[]>([])
+  const [carregandoPasta, setCarregandoPasta] = useState(false)
+
   const [busca, setBusca] = useState('')
   const [resultadoBusca, setResultadoBusca] = useState<Arquivo[] | null>(null)
   const [buscando, setBuscando] = useState(false)
-  const [carregando, setCarregando] = useState(true)
-  const [ehAdmin, setEhAdmin] = useState(false)
-  const [baixando, setBaixando] = useState<string>('')
-  const [erro, setErro] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Hidrata a sessao e redireciona se nao logado
   useEffect(() => {
     useAuth.getState().hydrate()
     const t = setTimeout(() => {
@@ -71,7 +81,7 @@ export default function HomePage() {
     setErro('')
     try {
       const r = await catalog.home()
-      setArquivos(r.data.arquivos || [])
+      setArquivosRecentes(r.data.arquivos || [])
       setCategorias(r.data.categorias || [])
       const me = await api.get('/api/me')
       setEhAdmin(!!me.data.admin)
@@ -87,21 +97,57 @@ export default function HomePage() {
     carregarCatalogo()
   }, [token, carregarCatalogo])
 
-  // Quando uma categoria e selecionada, busca TODOS os arquivos dela no servidor
-  useEffect(() => {
-    if (!categoriaAtiva || !token) {
-      setArquivosCategoria([])
-      return
-    }
-    setCarregandoCategoria(true)
+  function abrirCategoria(nome: string) {
+    setBusca('')
+    setResultadoBusca(null)
+    setCategoriaAtiva(nome)
+    setColecaoAtiva('')
+    setArquivosPasta([])
+    setCarregandoPasta(true)
     api
-      .get('/api/catalogo/categoria/' + encodeURIComponent(categoriaAtiva))
-      .then((r) => setArquivosCategoria(r.data.arquivos || []))
-      .catch(() => setArquivosCategoria([]))
-      .finally(() => setCarregandoCategoria(false))
-  }, [categoriaAtiva, token])
+      .get('/api/catalogo/categoria/' + encodeURIComponent(nome) + '/colecoes')
+      .then((r) => {
+        setColecoes(r.data.colecoes || [])
+        setTotalSoltos(r.data.totalSoltos || 0)
+      })
+      .catch(() => {
+        setColecoes([])
+        setTotalSoltos(0)
+      })
+      .finally(() => setCarregandoPasta(false))
+  }
 
-  // Busca com debounce
+  function abrirColecao(nome: string) {
+    setColecaoAtiva(nome)
+    setCarregandoPasta(true)
+    const url =
+      nome === '__soltos__'
+        ? '/api/catalogo/categoria/' + encodeURIComponent(categoriaAtiva) + '/soltos'
+        : '/api/catalogo/categoria/' +
+          encodeURIComponent(categoriaAtiva) +
+          '/estudio/' +
+          encodeURIComponent(nome)
+    api
+      .get(url)
+      .then((r) => setArquivosPasta(r.data.arquivos || []))
+      .catch(() => setArquivosPasta([]))
+      .finally(() => setCarregandoPasta(false))
+  }
+
+  function voltarInicio() {
+    setCategoriaAtiva('')
+    setColecaoAtiva('')
+    setColecoes([])
+    setArquivosPasta([])
+    setBusca('')
+    setResultadoBusca(null)
+  }
+
+  function voltarCategoria() {
+    setColecaoAtiva('')
+    setArquivosPasta([])
+  }
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (!busca.trim()) {
@@ -109,6 +155,8 @@ export default function HomePage() {
       setBuscando(false)
       return
     }
+    setCategoriaAtiva('')
+    setColecaoAtiva('')
     setBuscando(true)
     debounceRef.current = setTimeout(async () => {
       try {
@@ -127,8 +175,6 @@ export default function HomePage() {
     try {
       const r = await catalog.download(arq.id)
       if (r.data.url) {
-        // Link e de outro dominio (R2): abrir em nova aba funciona sempre.
-        // O backend ja forca o download com o nome certo via Content-Disposition.
         window.open(r.data.url, '_blank')
       }
     } catch (e: any) {
@@ -143,20 +189,20 @@ export default function HomePage() {
     router.push('/login')
   }
 
-  const lista =
-    resultadoBusca !== null
-      ? resultadoBusca
-      : categoriaAtiva
-      ? arquivosCategoria
-      : arquivos
-
-  const carregandoLista = buscando || (categoriaAtiva ? carregandoCategoria : carregando)
-
   const nomeUsuario = user?.email ? user.email.split('@')[0] : ''
+
+  const mostrandoBusca = resultadoBusca !== null
+  const mostrandoPasta = !!colecaoAtiva && !mostrandoBusca
+  const mostrandoListaPastas = !!categoriaAtiva && !colecaoAtiva && !mostrandoBusca
+
+  const listaArquivos = mostrandoBusca
+    ? resultadoBusca
+    : mostrandoPasta
+    ? arquivosPasta
+    : arquivosRecentes
 
   return (
     <div className="min-h-screen bg-bg flex">
-      {/* Sidebar */}
       <aside className="hidden lg:flex w-64 flex-col bg-sidebar text-white p-6">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-2 flex items-center justify-center font-bold">
@@ -172,15 +218,14 @@ export default function HomePage() {
           </div>
         </div>
 
-        <nav className="space-y-1 flex-1">
+        <nav className="space-y-1 flex-1 overflow-y-auto">
           <button
-            onClick={() => {
-              setCategoriaAtiva('')
-              setBusca('')
-            }}
+            onClick={voltarInicio}
             className={
               'w-full text-left px-4 py-3 rounded-lg font-semibold text-sm transition ' +
-              (!categoriaAtiva ? 'bg-primary text-white' : 'text-white/70 hover:bg-white/10')
+              (!categoriaAtiva && !mostrandoBusca
+                ? 'bg-primary text-white'
+                : 'text-white/70 hover:bg-white/10')
             }
           >
             🏠 Início
@@ -191,7 +236,7 @@ export default function HomePage() {
           {categorias.map((c) => (
             <button
               key={c.nome}
-              onClick={() => setCategoriaAtiva(c.nome === categoriaAtiva ? '' : c.nome)}
+              onClick={() => abrirCategoria(c.nome)}
               className={
                 'w-full text-left px-4 py-2.5 rounded-lg text-sm transition flex items-center justify-between ' +
                 (categoriaAtiva === c.nome
@@ -223,18 +268,14 @@ export default function HomePage() {
         </div>
       </aside>
 
-      {/* Conteúdo */}
       <main className="flex-1 p-6 sm:p-10 max-w-6xl mx-auto w-full">
-        {/* Topo */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold">
               Olá, <span className="text-primary">{nomeUsuario}</span>! 👋
             </h1>
             <p className="text-muted text-sm mt-1">
-              {arquivos.length > 0
-                ? 'Explore os arquivos do clube e baixe o que precisar.'
-                : 'Bem-vindo ao A4 CLUB.'}
+              Explore os arquivos do clube e baixe o que precisar.
             </p>
           </div>
           {ehAdmin && (
@@ -247,8 +288,7 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Busca */}
-        <div className="flex items-center gap-3 bg-white border border-border rounded-xl px-5 py-4 mb-8 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+        <div className="flex items-center gap-3 bg-white border border-border rounded-xl px-5 py-4 mb-6 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
           <span className="text-lg">🔍</span>
           <input
             type="text"
@@ -258,10 +298,7 @@ export default function HomePage() {
             className="flex-1 outline-none bg-transparent text-sm"
           />
           {busca && (
-            <button
-              onClick={() => setBusca('')}
-              className="text-muted text-sm font-semibold"
-            >
+            <button onClick={() => setBusca('')} className="text-muted text-sm font-semibold">
               ✕
             </button>
           )}
@@ -273,19 +310,36 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Chips de categoria (mobile) */}
-        {categorias.length > 0 && (
+        {!mostrandoBusca && categoriaAtiva && (
+          <div className="flex items-center gap-2 text-sm mb-4 flex-wrap">
+            <button onClick={voltarInicio} className="text-muted hover:text-primary">
+              Início
+            </button>
+            <span className="text-muted">/</span>
+            <button
+              onClick={voltarCategoria}
+              className={colecaoAtiva ? 'text-muted hover:text-primary' : 'font-bold text-primary'}
+            >
+              {categoriaAtiva}
+            </button>
+            {colecaoAtiva && (
+              <>
+                <span className="text-muted">/</span>
+                <span className="font-bold text-primary">
+                  {colecaoAtiva === '__soltos__' ? 'Outros arquivos' : colecaoAtiva}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {!categoriaAtiva && !mostrandoBusca && categorias.length > 0 && (
           <div className="flex lg:hidden gap-2 flex-wrap mb-6">
             {categorias.map((c) => (
               <button
                 key={c.nome}
-                onClick={() => setCategoriaAtiva(c.nome === categoriaAtiva ? '' : c.nome)}
-                className={
-                  'px-3 py-1.5 rounded-full text-xs font-semibold border transition ' +
-                  (categoriaAtiva === c.nome
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white border-border text-muted')
-                }
+                onClick={() => abrirCategoria(c.nome)}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold border bg-white border-border text-muted"
               >
                 {c.nome} · {c.total}
               </button>
@@ -293,80 +347,130 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Título da seção */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-lg">
-            {buscando
-              ? 'Buscando...'
-              : resultadoBusca !== null
-              ? `Resultados para "${busca}"`
-              : categoriaAtiva
-              ? categoriaAtiva
+            {mostrandoBusca
+              ? buscando
+                ? 'Buscando...'
+                : `Resultados para "${busca}"`
+              : mostrandoListaPastas
+              ? 'Pastas'
+              : mostrandoPasta
+              ? colecaoAtiva === '__soltos__'
+                ? 'Outros arquivos'
+                : colecaoAtiva
               : 'Adicionados recentemente'}
           </h2>
-          <span className="text-sm text-muted">{lista.length} arquivo(s)</span>
         </div>
 
-        {/* Grid de arquivos */}
-        {carregandoLista ? (
-          <div className="text-muted text-sm">Carregando...</div>
-        ) : lista.length === 0 ? (
-          <div className="bg-white border border-border rounded-2xl p-10 text-center">
-            <div className="text-4xl mb-3">🗂️</div>
-            <div className="font-bold mb-1">
-              {resultadoBusca !== null
-                ? 'Nenhum arquivo encontrado'
-                : 'O catálogo ainda está vazio'}
-            </div>
-            <p className="text-sm text-muted">
-              {resultadoBusca !== null
-                ? 'Tente buscar por outro nome.'
-                : 'Os arquivos aparecerão aqui após a primeira importação.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {lista.map((a) => (
-              <div
-                key={a.id}
-                className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
-                    {icone(a.extensao)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm truncate" title={a.nome}>
-                      {a.nome}
+        {mostrandoListaPastas && (
+          <>
+            {carregandoPasta ? (
+              <div className="text-muted text-sm">Carregando pastas...</div>
+            ) : colecoes.length === 0 && totalSoltos === 0 ? (
+              <div className="bg-white border border-border rounded-2xl p-10 text-center">
+                <div className="text-4xl mb-3">📭</div>
+                <div className="font-bold">Nenhum arquivo nesta categoria ainda</div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {colecoes.map((c) => (
+                  <button
+                    key={c.nome}
+                    onClick={() => abrirColecao(c.nome)}
+                    className="bg-white border border-border rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg hover:border-primary/40 transition text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl flex-shrink-0">
+                      📁
                     </div>
-                    <div className="text-xs text-muted mt-0.5">
-                      {(a.extensao || '').toUpperCase()}
-                      {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate">{c.nome}</div>
+                      <div className="text-xs text-muted mt-0.5">{c.total} arquivo(s)</div>
                     </div>
-                    {a.categoria && (
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        <span className="inline-block px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
-                          {a.categoria}
-                        </span>
-                        {a.colecao && (
-                          <span className="inline-block px-2 py-0.5 rounded-full bg-bg text-muted text-[11px]">
-                            {a.colecao}
-                          </span>
+                  </button>
+                ))}
+                {totalSoltos > 0 && (
+                  <button
+                    onClick={() => abrirColecao('__soltos__')}
+                    className="bg-white border border-border rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg hover:border-primary/40 transition text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
+                      🗂️
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate">Outros arquivos</div>
+                      <div className="text-xs text-muted mt-0.5">{totalSoltos} arquivo(s)</div>
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {!mostrandoListaPastas && (
+          <>
+            {carregando || carregandoPasta || buscando ? (
+              <div className="text-muted text-sm">Carregando...</div>
+            ) : listaArquivos.length === 0 ? (
+              <div className="bg-white border border-border rounded-2xl p-10 text-center">
+                <div className="text-4xl mb-3">🗂️</div>
+                <div className="font-bold mb-1">
+                  {mostrandoBusca ? 'Nenhum arquivo encontrado' : 'Nada por aqui ainda'}
+                </div>
+                <p className="text-sm text-muted">
+                  {mostrandoBusca
+                    ? 'Tente buscar por outro nome.'
+                    : 'Os arquivos aparecerão aqui após a importação.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {listaArquivos.map((a) => (
+                  <div
+                    key={a.id}
+                    className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
+                        {icone(a.extensao)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm truncate" title={a.nome}>
+                          {a.nome}
+                        </div>
+                        <div className="text-xs text-muted mt-0.5">
+                          {(a.extensao || '').toUpperCase()}
+                          {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
+                        </div>
+                        {(a.categoria || a.colecao) && (
+                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {a.categoria && (
+                              <span className="inline-block px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                                {a.categoria}
+                              </span>
+                            )}
+                            {a.colecao && (
+                              <span className="inline-block px-2 py-0.5 rounded-full bg-bg text-muted text-[11px]">
+                                {a.colecao}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
+                    </div>
+                    <button
+                      onClick={() => baixar(a)}
+                      disabled={baixando === a.id}
+                      className="w-full grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
+                    >
+                      {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
+                    </button>
                   </div>
-                </div>
-                <button
-                  onClick={() => baixar(a)}
-                  disabled={baixando === a.id}
-                  className="w-full grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
-                >
-                  {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
-                </button>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </main>
     </div>
