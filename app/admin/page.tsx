@@ -52,6 +52,25 @@ function espacoLegivel(bytes?: number) {
   return mb.toFixed(1) + ' MB'
 }
 
+// Cloudflare R2: 10 GB gratis por mes, depois USD 0,015/GB.
+// Cotacao aproximada (varia) - apenas para dar uma nocao de custo, nao eh a fatura exata.
+const R2_GB_GRATIS = 10
+const R2_USD_POR_GB = 0.015
+const COTACAO_USD_BRL = 5.09
+
+function custoEstimadoR2(bytes?: number) {
+  const gbTotal = (bytes || 0) / (1024 * 1024 * 1024)
+  const gbCobrados = Math.max(0, gbTotal - R2_GB_GRATIS)
+  const usd = gbCobrados * R2_USD_POR_GB
+  return {
+    dentroDoGratis: gbCobrados <= 0,
+    gbTotal,
+    gbCobrados,
+    usd,
+    brl: usd * COTACAO_USD_BRL,
+  }
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const { user, token } = useAuth()
@@ -279,6 +298,41 @@ export default function AdminPage() {
             <div className="text-sm text-muted mt-1">Google Drive</div>
           </div>
         </div>
+
+        {/* Custo estimado do R2 */}
+        {stats && (() => {
+          const c = custoEstimadoR2(stats.espacoUsadoBytes)
+          return (
+            <div className="bg-white rounded-2xl border border-border p-5 mb-8">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                <div className="font-semibold text-sm">
+                  💰 Custo estimado do armazenamento (Cloudflare R2)
+                </div>
+                {c.dentroDoGratis ? (
+                  <span className="px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-bold">
+                    🟢 Dentro do plano grátis
+                  </span>
+                ) : (
+                  <span className="px-3 py-1.5 rounded-full bg-amber/10 text-amber text-base font-bold">
+                    ≈ R$ {c.brl.toFixed(2)} / mês
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
+                <span>📦 {c.gbTotal.toFixed(2)} GB armazenados</span>
+                <span>🎁 {Math.min(c.gbTotal, R2_GB_GRATIS).toFixed(2)} GB grátis</span>
+                <span>💳 {c.gbCobrados.toFixed(2)} GB cobrados</span>
+                <span>💵 US$ {R2_USD_POR_GB.toFixed(3)}/GB</span>
+              </div>
+
+              <div className="text-[11px] text-muted mt-2">
+                Cloudflare libera {R2_GB_GRATIS} GB grátis por mês; acima disso cobra US$ {R2_USD_POR_GB.toFixed(3)}/GB.
+                Estimativa aproximada (cotação ≈ R$ {COTACAO_USD_BRL.toFixed(2)}, varia diariamente) — não é a fatura exata.
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Progresso da importação */}
         {job && (
