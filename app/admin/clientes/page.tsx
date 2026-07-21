@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/lib/auth'
-import api, { admin } from '@/lib/api'
+import api, { admin, comprovantes } from '@/lib/api'
 
 interface Usuario {
   uid: string
@@ -49,6 +49,8 @@ export default function AdminClientesPage() {
   const [erro, setErro] = useState('')
   const [prazoSelecionado, setPrazoSelecionado] = useState<Record<string, number>>({})
   const [atualizandoUid, setAtualizandoUid] = useState('')
+  const [comprovantesAbertos, setComprovantesAbertos] = useState<Record<string, any[]>>({})
+  const [carregandoComprovantesUid, setCarregandoComprovantesUid] = useState('')
 
   const carregar = useCallback(async () => {
     setErro('')
@@ -89,6 +91,35 @@ export default function AdminClientesPage() {
       setErro(e.response?.data?.erro || 'Erro ao atualizar assinante')
     } finally {
       setAtualizandoUid('')
+    }
+  }
+
+  async function alternarComprovantes(uid: string) {
+    if (comprovantesAbertos[uid]) {
+      setComprovantesAbertos((prev) => {
+        const novo = { ...prev }
+        delete novo[uid]
+        return novo
+      })
+      return
+    }
+    setCarregandoComprovantesUid(uid)
+    try {
+      const r = await comprovantes.doUsuario(uid)
+      setComprovantesAbertos((prev) => ({ ...prev, [uid]: r.data.comprovantes || [] }))
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao carregar comprovantes')
+    } finally {
+      setCarregandoComprovantesUid('')
+    }
+  }
+
+  async function abrirComprovante(uid: string, id: string) {
+    try {
+      const r = await comprovantes.url(uid, id)
+      window.open(r.data.url, '_blank')
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao abrir comprovante')
     }
   }
 
@@ -214,7 +245,41 @@ export default function AdminClientesPage() {
                     >
                       🗑 Excluir
                     </button>
+                    <button
+                      onClick={() => alternarComprovantes(u.uid)}
+                      disabled={carregandoComprovantesUid === u.uid}
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold disabled:opacity-40"
+                    >
+                      {carregandoComprovantesUid === u.uid
+                        ? 'Carregando...'
+                        : comprovantesAbertos[u.uid]
+                        ? '📎 Ocultar comprovantes'
+                        : '📎 Ver comprovantes'}
+                    </button>
                   </div>
+
+                  {comprovantesAbertos[u.uid] && (
+                    <div className="mt-3 pt-3 border-t border-border">
+                      {comprovantesAbertos[u.uid].length === 0 ? (
+                        <div className="text-xs text-muted">Nenhum comprovante enviado.</div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {comprovantesAbertos[u.uid].map((c: any) => (
+                            <button
+                              key={c.id}
+                              onClick={() => abrirComprovante(u.uid, c.id)}
+                              className="flex items-center justify-between w-full text-left border border-border rounded-lg px-3 py-2 text-xs hover:border-primary/40 transition"
+                            >
+                              <span className="truncate">📎 {c.nome}</span>
+                              <span className="text-muted flex-shrink-0 ml-2">
+                                {new Date(c.enviadoEm).toLocaleDateString('pt-BR')}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
