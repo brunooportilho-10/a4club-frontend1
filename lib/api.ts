@@ -76,6 +76,7 @@ export const admin = {
   setStatusUsuario: (uid: string, status: string, meses?: number) =>
     api.post(`/admin/usuarios/${uid}/status`, { status, meses }),
   excluirUsuario: (uid: string) => api.post(`/admin/usuarios/${uid}/excluir`, {}),
+  resetarSenha: (uid: string) => api.post(`/admin/usuarios/${uid}/resetar-senha`, {}),
   iniciarBackup: () => api.post('/admin/backup/iniciar', {}),
 }
 export default api
