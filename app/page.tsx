@@ -19,6 +19,13 @@ interface Categoria {
   total: number
 }
 
+interface Stats {
+  totalArquivos: number
+  totalCategorias: number
+  novosSemana: number
+  totalDownloads: number
+}
+
 interface Subpasta {
   nome: string
   caminho: string
@@ -55,11 +62,16 @@ function tamanhoLegivel(bytes?: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function numeroFormatado(n?: number) {
+  return (n || 0).toLocaleString('pt-BR')
+}
+
 export default function HomePage() {
   const router = useRouter()
   const { user, token, logout } = useAuth()
 
   const [arquivosRecentes, setArquivosRecentes] = useState<Arquivo[]>([])
+  const [stats, setStats] = useState<Stats | null>(null)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [ehAdmin, setEhAdmin] = useState(false)
   const [carregando, setCarregando] = useState(true)
@@ -82,6 +94,10 @@ export default function HomePage() {
   const [lightbox, setLightbox] = useState<{ url: string; nome: string; tipo: 'imagem' | 'pdf' } | null>(null)
   const [carregandoPreviewId, setCarregandoPreviewId] = useState<string>('')
 
+  // Status de acesso: null = ainda verificando, 'pago' = liberado, outro = bloqueado
+  const [statusAssinatura, setStatusAssinatura] = useState<string | null>(null)
+  const [verificandoAcesso, setVerificandoAcesso] = useState(true)
+
   useEffect(() => {
     useAuth.getState().hydrate()
     const t = setTimeout(() => {
@@ -95,9 +111,8 @@ export default function HomePage() {
     try {
       const r = await catalog.home()
       setArquivosRecentes(r.data.arquivos || [])
+      setStats(r.data.stats || null)
       setCategorias(r.data.categorias || [])
-      const me = await api.get('/api/me')
-      setEhAdmin(!!me.data.admin)
     } catch (e: any) {
       setErro(e.response?.data?.erro || 'Erro ao carregar o catálogo')
     } finally {
@@ -105,9 +120,25 @@ export default function HomePage() {
     }
   }, [])
 
+  // Verifica o acesso primeiro (leve) - so carrega o catalogo pesado se liberado
   useEffect(() => {
     if (!token) return
-    carregarCatalogo()
+    api
+      .get('/api/me')
+      .then((me) => {
+        setEhAdmin(!!me.data.admin)
+        setStatusAssinatura(me.data.statusAssinatura || 'pendente')
+        if (me.data.admin || me.data.statusAssinatura === 'pago') {
+          carregarCatalogo()
+        } else {
+          setCarregando(false)
+        }
+      })
+      .catch(() => {
+        setStatusAssinatura('pendente')
+        setCarregando(false)
+      })
+      .finally(() => setVerificandoAcesso(false))
   }, [token, carregarCatalogo])
 
   function navegarPara(categoria: string, caminho: string) {
@@ -235,6 +266,39 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listaArquivos])
 
+  // Enquanto verifica o acesso, nao mostra nada pesado
+  if (verificandoAcesso) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="text-muted text-sm">Carregando...</div>
+      </div>
+    )
+  }
+
+  // Acesso bloqueado: nao carrega nem mostra o catalogo
+  if (!ehAdmin && statusAssinatura !== 'pago') {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center p-6">
+        <div className="max-w-sm w-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl mx-auto mb-5">
+            🔒
+          </div>
+          <h1 className="text-xl font-bold mb-2">Acesso ainda não liberado</h1>
+          <p className="text-sm text-muted mb-6">
+            Sua conta foi criada, mas o acesso ao A4 CLUB ainda não foi ativado.
+            Entre em contato com o administrador para liberar sua assinatura.
+          </p>
+          <button
+            onClick={sair}
+            className="text-sm text-muted hover:text-primary font-semibold"
+          >
+            🚪 Sair
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-bg flex">
       <aside className="hidden lg:flex w-64 flex-col bg-sidebar text-white p-6">
@@ -344,6 +408,47 @@ export default function HomePage() {
           </div>
         )}
 
+        {!dentroDeCategoria && !mostrandoBusca && stats && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white border border-border rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-lg flex-shrink-0">
+                📁
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold leading-tight">{numeroFormatado(stats.totalArquivos)}</div>
+                <div className="text-[11px] text-muted leading-tight">Arquivos disponíveis</div>
+              </div>
+            </div>
+            <div className="bg-white border border-border rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber/10 flex items-center justify-center text-lg flex-shrink-0">
+                ⬇️
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold leading-tight">{numeroFormatado(stats.totalDownloads)}</div>
+                <div className="text-[11px] text-muted leading-tight">Downloads realizados</div>
+              </div>
+            </div>
+            <div className="bg-white border border-border rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-pink/10 flex items-center justify-center text-lg flex-shrink-0">
+                🗂️
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold leading-tight">{numeroFormatado(stats.totalCategorias)}</div>
+                <div className="text-[11px] text-muted leading-tight">Categorias</div>
+              </div>
+            </div>
+            <div className="bg-white border border-border rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-green/10 flex items-center justify-center text-lg flex-shrink-0">
+                ✨
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold leading-tight">{numeroFormatado(stats.novosSemana)}</div>
+                <div className="text-[11px] text-muted leading-tight">Novos esta semana</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {dentroDeCategoria && (
           <div className="flex items-center gap-2 text-sm mb-4 flex-wrap">
             <button onClick={voltarInicio} className="text-muted hover:text-primary">
@@ -434,60 +539,58 @@ export default function HomePage() {
             </p>
           </div>
         ) : listaArquivos.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="space-y-2">
             {listaArquivos.map((a) => (
               <div
                 key={a.id}
-                className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
+                className="bg-white border border-border rounded-xl px-4 py-3 flex items-center gap-3 hover:border-primary/40 hover:shadow-sm transition"
               >
-                <div className="flex items-start gap-3">
-                  {ehImagem(a.extensao) ? (
-                    <button
-                      onClick={() => abrirPreviaImagem(a)}
-                      className="w-14 h-14 rounded-xl bg-bg flex-shrink-0 overflow-hidden relative group"
-                      title="Ver prévia"
-                    >
-                      {previews[a.id] ? (
-                        <img
-                          src={previews[a.id]}
-                          alt={a.nome}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="w-full h-full flex items-center justify-center text-2xl">
-                          {icone(a.extensao)}
-                        </span>
-                      )}
-                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center text-white opacity-0 group-hover:opacity-100 text-lg">
-                        🔍
+                {ehImagem(a.extensao) ? (
+                  <button
+                    onClick={() => abrirPreviaImagem(a)}
+                    className="w-10 h-10 rounded-lg bg-bg flex-shrink-0 overflow-hidden relative group"
+                    title="Ver prévia"
+                  >
+                    {previews[a.id] ? (
+                      <img src={previews[a.id]} alt={a.nome} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="w-full h-full flex items-center justify-center text-base">
+                        {icone(a.extensao)}
                       </span>
-                    </button>
-                  ) : (
-                    <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
-                      {icone(a.extensao)}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm truncate" title={a.nome}>
-                      {a.nome}
-                    </div>
-                    <div className="text-xs text-muted mt-0.5">
+                    )}
+                    <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center text-white opacity-0 group-hover:opacity-100 text-sm">
+                      🔍
+                    </span>
+                  </button>
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-bg flex items-center justify-center text-base flex-shrink-0">
+                    {icone(a.extensao)}
+                  </div>
+                )}
+
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-sm truncate" title={a.nome}>
+                    {a.nome}
+                  </div>
+                  <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                    <span>
                       {(a.extensao || '').toUpperCase()}
                       {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
-                    </div>
+                    </span>
                     {a.categoria && !dentroDeCategoria && (
-                      <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold">
                         {a.categoria}
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
+
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {ehPdf(a.extensao) && (
                     <button
                       onClick={() => abrirPreviaPdf(a)}
                       disabled={carregandoPreviewId === a.id}
-                      className="px-3 py-2.5 rounded-lg border border-border text-sm font-bold disabled:opacity-50"
+                      className="w-9 h-9 rounded-lg border border-border text-sm font-bold disabled:opacity-50 flex items-center justify-center"
                       title="Ver prévia"
                     >
                       👁
@@ -496,9 +599,9 @@ export default function HomePage() {
                   <button
                     onClick={() => baixar(a)}
                     disabled={baixando === a.id}
-                    className="flex-1 grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
+                    className="grad-btn text-white text-xs font-bold py-2 px-4 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
                   >
-                    {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
+                    {baixando === a.id ? '...' : '⬇ Baixar'}
                   </button>
                 </div>
               </div>
