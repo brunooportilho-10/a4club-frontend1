@@ -3,6 +3,7 @@ import Cookies from 'js-cookie'
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth'
@@ -17,6 +18,7 @@ interface AuthStore {
   error: string | null
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string) => Promise<void>
+  esqueciSenha: (email: string) => Promise<void>
   logout: () => void
   hydrate: () => void
 }
@@ -68,6 +70,15 @@ export const useAuth = create<AuthStore>((set) => ({
     } catch (e: any) {
       const m = msgs[e.code] || 'Erro ao criar a conta'
       set({ error: m, isLoading: false })
+      throw new Error(m)
+    }
+  },
+
+  esqueciSenha: async (email) => {
+    try {
+      await sendPasswordResetEmail(fb, email)
+    } catch (e: any) {
+      const m = msgs[e.code] || 'Erro ao enviar o e-mail de redefinição'
       throw new Error(m)
     }
   },
