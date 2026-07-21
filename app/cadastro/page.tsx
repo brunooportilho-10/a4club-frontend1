@@ -3,11 +3,20 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
+import api from '@/lib/api'
+
+function formatarWhatsapp(valor: string) {
+  const d = valor.replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return d
+  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
 
 export default function CadastroPage() {
   const router = useRouter()
   const { user, register, isLoading, error } = useAuth()
   const [email, setEmail] = useState('')
+  const [whatsapp, setWhatsapp] = useState('')
   const [password, setPassword] = useState('')
   const [confirmar, setConfirmar] = useState('')
   const [localError, setLocalError] = useState('')
@@ -24,6 +33,11 @@ export default function CadastroPage() {
     e.preventDefault()
     setLocalError('')
 
+    const digitos = whatsapp.replace(/\D/g, '')
+    if (digitos.length < 10) {
+      setLocalError('Informe um número de WhatsApp válido, com DDD.')
+      return
+    }
     if (password !== confirmar) {
       setLocalError('As senhas não coincidem')
       return
@@ -35,6 +49,11 @@ export default function CadastroPage() {
 
     try {
       await register(email, password)
+      try {
+        await api.post('/api/perfil', { whatsapp })
+      } catch (e) {
+        // nao bloqueia o cadastro se so o salvamento do whatsapp falhar
+      }
       setSucesso(true)
     } catch (err: any) {
       setLocalError(err.message || 'Erro ao criar a conta')
@@ -50,8 +69,8 @@ export default function CadastroPage() {
           </div>
           <h1 className="text-xl font-bold mb-2">Conta criada com sucesso!</h1>
           <p className="text-sm text-muted mb-6">
-            Seu cadastro foi feito. Agora é só aguardar a liberação do
-            administrador do A4 CLUB para começar a baixar os arquivos.
+            Você já tem 1 dia grátis para explorar o catálogo. Depois disso, entre em
+            contato com o administrador do A4 CLUB para continuar com acesso completo.
           </p>
           <button
             onClick={() => router.push('/')}
@@ -107,11 +126,11 @@ export default function CadastroPage() {
             </div>
             <div className="flex gap-4">
               <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center text-xl flex-shrink-0">
-                🔒
+                🎁
               </div>
               <div>
-                <div className="font-bold">Acesso seguro</div>
-                <div className="text-sm text-white/70">Seus arquivos sempre protegidos</div>
+                <div className="font-bold">1 dia grátis para testar</div>
+                <div className="text-sm text-white/70">Explore antes de assinar</div>
               </div>
             </div>
           </div>
@@ -124,7 +143,7 @@ export default function CadastroPage() {
           <h2 className="text-4xl font-bold mb-2">
             Criar <span className="text-primary">conta</span>
           </h2>
-          <p className="text-muted mb-8">Cadastre-se para acessar o A4 CLUB</p>
+          <p className="text-muted mb-8">Cadastre-se e ganhe 1 dia grátis no A4 CLUB</p>
 
           <form onSubmit={handleCadastro} className="space-y-5">
             <div>
@@ -142,6 +161,26 @@ export default function CadastroPage() {
                   required
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="flex justify-between text-sm font-semibold mb-2">
+                <span>WhatsApp</span>
+              </label>
+              <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+                <span className="text-lg">📱</span>
+                <input
+                  type="tel"
+                  placeholder="(11) 91234-5678"
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(formatarWhatsapp(e.target.value))}
+                  className="flex-1 outline-none bg-transparent text-sm"
+                  required
+                />
+              </div>
+              <p className="text-xs text-muted mt-1">
+                Usamos para avisar sobre seu plano e vencimento
+              </p>
             </div>
 
             <div>
