@@ -9,7 +9,6 @@ interface Arquivo {
   id: string
   nome: string
   categoria?: string
-  colecao?: string | null
   extensao?: string
   tamanho?: number
   importadoEm?: string
@@ -20,9 +19,9 @@ interface Categoria {
   total: number
 }
 
-interface Colecao {
+interface Subpasta {
   nome: string
-  total: number
+  caminho: string
 }
 
 const ICONES: Record<string, string> = {
@@ -58,9 +57,8 @@ export default function HomePage() {
   const [baixando, setBaixando] = useState<string>('')
 
   const [categoriaAtiva, setCategoriaAtiva] = useState<string>('')
-  const [colecoes, setColecoes] = useState<Colecao[]>([])
-  const [totalSoltos, setTotalSoltos] = useState(0)
-  const [colecaoAtiva, setColecaoAtiva] = useState<string>('')
+  const [caminhoAtual, setCaminhoAtual] = useState<string>('')
+  const [subpastas, setSubpastas] = useState<Subpasta[]>([])
   const [arquivosPasta, setArquivosPasta] = useState<Arquivo[]>([])
   const [carregandoPasta, setCarregandoPasta] = useState(false)
 
@@ -97,55 +95,38 @@ export default function HomePage() {
     carregarCatalogo()
   }, [token, carregarCatalogo])
 
-  function abrirCategoria(nome: string) {
+  function navegarPara(categoria: string, caminho: string) {
     setBusca('')
     setResultadoBusca(null)
-    setCategoriaAtiva(nome)
-    setColecaoAtiva('')
-    setArquivosPasta([])
+    setCategoriaAtiva(categoria)
+    setCaminhoAtual(caminho)
     setCarregandoPasta(true)
     api
-      .get('/api/catalogo/categoria/' + encodeURIComponent(nome) + '/colecoes')
+      .get('/api/catalogo/navegar', { params: { categoria, caminho } })
       .then((r) => {
-        setColecoes(r.data.colecoes || [])
-        setTotalSoltos(r.data.totalSoltos || 0)
+        setSubpastas(r.data.subpastas || [])
+        setArquivosPasta(r.data.arquivos || [])
       })
       .catch(() => {
-        setColecoes([])
-        setTotalSoltos(0)
+        setSubpastas([])
+        setArquivosPasta([])
       })
-      .finally(() => setCarregandoPasta(false))
-  }
-
-  function abrirColecao(nome: string) {
-    setColecaoAtiva(nome)
-    setCarregandoPasta(true)
-    const url =
-      nome === '__soltos__'
-        ? '/api/catalogo/categoria/' + encodeURIComponent(categoriaAtiva) + '/soltos'
-        : '/api/catalogo/categoria/' +
-          encodeURIComponent(categoriaAtiva) +
-          '/estudio/' +
-          encodeURIComponent(nome)
-    api
-      .get(url)
-      .then((r) => setArquivosPasta(r.data.arquivos || []))
-      .catch(() => setArquivosPasta([]))
       .finally(() => setCarregandoPasta(false))
   }
 
   function voltarInicio() {
     setCategoriaAtiva('')
-    setColecaoAtiva('')
-    setColecoes([])
+    setCaminhoAtual('')
+    setSubpastas([])
     setArquivosPasta([])
     setBusca('')
     setResultadoBusca(null)
   }
 
-  function voltarCategoria() {
-    setColecaoAtiva('')
-    setArquivosPasta([])
+  const segmentosCaminho = caminhoAtual ? caminhoAtual.split('/').filter(Boolean) : []
+
+  function caminhoAteSegmento(indice: number) {
+    return segmentosCaminho.slice(0, indice + 1).join('/')
   }
 
   useEffect(() => {
@@ -156,7 +137,7 @@ export default function HomePage() {
       return
     }
     setCategoriaAtiva('')
-    setColecaoAtiva('')
+    setCaminhoAtual('')
     setBuscando(true)
     debounceRef.current = setTimeout(async () => {
       try {
@@ -192,14 +173,9 @@ export default function HomePage() {
   const nomeUsuario = user?.email ? user.email.split('@')[0] : ''
 
   const mostrandoBusca = resultadoBusca !== null
-  const mostrandoPasta = !!colecaoAtiva && !mostrandoBusca
-  const mostrandoListaPastas = !!categoriaAtiva && !colecaoAtiva && !mostrandoBusca
+  const dentroDeCategoria = !!categoriaAtiva && !mostrandoBusca
 
-  const listaArquivos = mostrandoBusca
-    ? resultadoBusca
-    : mostrandoPasta
-    ? arquivosPasta
-    : arquivosRecentes
+  const listaArquivos = mostrandoBusca ? resultadoBusca : dentroDeCategoria ? arquivosPasta : arquivosRecentes
 
   return (
     <div className="min-h-screen bg-bg flex">
@@ -236,7 +212,7 @@ export default function HomePage() {
           {categorias.map((c) => (
             <button
               key={c.nome}
-              onClick={() => abrirCategoria(c.nome)}
+              onClick={() => navegarPara(c.nome, '')}
               className={
                 'w-full text-left px-4 py-2.5 rounded-lg text-sm transition flex items-center justify-between ' +
                 (categoriaAtiva === c.nome
@@ -310,26 +286,33 @@ export default function HomePage() {
           </div>
         )}
 
-        {!mostrandoBusca && categoriaAtiva && (
+        {dentroDeCategoria && (
           <div className="flex items-center gap-2 text-sm mb-4 flex-wrap">
             <button onClick={voltarInicio} className="text-muted hover:text-primary">
               Início
             </button>
             <span className="text-muted">/</span>
             <button
-              onClick={voltarCategoria}
-              className={colecaoAtiva ? 'text-muted hover:text-primary' : 'font-bold text-primary'}
+              onClick={() => navegarPara(categoriaAtiva, '')}
+              className={!caminhoAtual ? 'font-bold text-primary' : 'text-muted hover:text-primary'}
             >
               {categoriaAtiva}
             </button>
-            {colecaoAtiva && (
-              <>
+            {segmentosCaminho.map((seg, i) => (
+              <span key={i} className="flex items-center gap-2">
                 <span className="text-muted">/</span>
-                <span className="font-bold text-primary">
-                  {colecaoAtiva === '__soltos__' ? 'Outros arquivos' : colecaoAtiva}
-                </span>
-              </>
-            )}
+                <button
+                  onClick={() => navegarPara(categoriaAtiva, caminhoAteSegmento(i))}
+                  className={
+                    i === segmentosCaminho.length - 1
+                      ? 'font-bold text-primary'
+                      : 'text-muted hover:text-primary'
+                  }
+                >
+                  {seg}
+                </button>
+              </span>
+            ))}
           </div>
         )}
 
@@ -338,7 +321,7 @@ export default function HomePage() {
             {categorias.map((c) => (
               <button
                 key={c.nome}
-                onClick={() => abrirCategoria(c.nome)}
+                onClick={() => navegarPara(c.nome, '')}
                 className="px-3 py-1.5 rounded-full text-xs font-semibold border bg-white border-border text-muted"
               >
                 {c.nome} · {c.total}
@@ -353,125 +336,82 @@ export default function HomePage() {
               ? buscando
                 ? 'Buscando...'
                 : `Resultados para "${busca}"`
-              : mostrandoListaPastas
-              ? 'Pastas'
-              : mostrandoPasta
-              ? colecaoAtiva === '__soltos__'
-                ? 'Outros arquivos'
-                : colecaoAtiva
+              : dentroDeCategoria
+              ? segmentosCaminho[segmentosCaminho.length - 1] || categoriaAtiva
               : 'Adicionados recentemente'}
           </h2>
         </div>
 
-        {mostrandoListaPastas && (
-          <>
-            {carregandoPasta ? (
-              <div className="text-muted text-sm">Carregando pastas...</div>
-            ) : colecoes.length === 0 && totalSoltos === 0 ? (
-              <div className="bg-white border border-border rounded-2xl p-10 text-center">
-                <div className="text-4xl mb-3">📭</div>
-                <div className="font-bold">Nenhum arquivo nesta categoria ainda</div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {colecoes.map((c) => (
-                  <button
-                    key={c.nome}
-                    onClick={() => abrirColecao(c.nome)}
-                    className="bg-white border border-border rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg hover:border-primary/40 transition text-left"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl flex-shrink-0">
-                      📁
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm truncate">{c.nome}</div>
-                      <div className="text-xs text-muted mt-0.5">{c.total} arquivo(s)</div>
-                    </div>
-                  </button>
-                ))}
-                {totalSoltos > 0 && (
-                  <button
-                    onClick={() => abrirColecao('__soltos__')}
-                    className="bg-white border border-border rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg hover:border-primary/40 transition text-left"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
-                      🗂️
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm truncate">Outros arquivos</div>
-                      <div className="text-xs text-muted mt-0.5">{totalSoltos} arquivo(s)</div>
-                    </div>
-                  </button>
-                )}
-              </div>
-            )}
-          </>
+        {dentroDeCategoria && !carregandoPasta && subpastas.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+            {subpastas.map((p) => (
+              <button
+                key={p.caminho}
+                onClick={() => navegarPara(categoriaAtiva, p.caminho)}
+                className="bg-white border border-border rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg hover:border-primary/40 transition text-left"
+              >
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl flex-shrink-0">
+                  📁
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm truncate">{p.nome}</div>
+                </div>
+              </button>
+            ))}
+          </div>
         )}
 
-        {!mostrandoListaPastas && (
-          <>
-            {carregando || carregandoPasta || buscando ? (
-              <div className="text-muted text-sm">Carregando...</div>
-            ) : listaArquivos.length === 0 ? (
-              <div className="bg-white border border-border rounded-2xl p-10 text-center">
-                <div className="text-4xl mb-3">🗂️</div>
-                <div className="font-bold mb-1">
-                  {mostrandoBusca ? 'Nenhum arquivo encontrado' : 'Nada por aqui ainda'}
-                </div>
-                <p className="text-sm text-muted">
-                  {mostrandoBusca
-                    ? 'Tente buscar por outro nome.'
-                    : 'Os arquivos aparecerão aqui após a importação.'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {listaArquivos.map((a) => (
-                  <div
-                    key={a.id}
-                    className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
-                        {icone(a.extensao)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-semibold text-sm truncate" title={a.nome}>
-                          {a.nome}
-                        </div>
-                        <div className="text-xs text-muted mt-0.5">
-                          {(a.extensao || '').toUpperCase()}
-                          {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
-                        </div>
-                        {(a.categoria || a.colecao) && (
-                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                            {a.categoria && (
-                              <span className="inline-block px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
-                                {a.categoria}
-                              </span>
-                            )}
-                            {a.colecao && (
-                              <span className="inline-block px-2 py-0.5 rounded-full bg-bg text-muted text-[11px]">
-                                {a.colecao}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => baixar(a)}
-                      disabled={baixando === a.id}
-                      className="w-full grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
-                    >
-                      {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
-                    </button>
+        {carregando || (dentroDeCategoria && carregandoPasta) || buscando ? (
+          <div className="text-muted text-sm">Carregando...</div>
+        ) : listaArquivos.length === 0 && (!dentroDeCategoria || subpastas.length === 0) ? (
+          <div className="bg-white border border-border rounded-2xl p-10 text-center">
+            <div className="text-4xl mb-3">🗂️</div>
+            <div className="font-bold mb-1">
+              {mostrandoBusca ? 'Nenhum arquivo encontrado' : 'Nada por aqui ainda'}
+            </div>
+            <p className="text-sm text-muted">
+              {mostrandoBusca
+                ? 'Tente buscar por outro nome.'
+                : 'Os arquivos aparecerão aqui após a importação.'}
+            </p>
+          </div>
+        ) : listaArquivos.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {listaArquivos.map((a) => (
+              <div
+                key={a.id}
+                className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
+                    {icone(a.extensao)}
                   </div>
-                ))}
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm truncate" title={a.nome}>
+                      {a.nome}
+                    </div>
+                    <div className="text-xs text-muted mt-0.5">
+                      {(a.extensao || '').toUpperCase()}
+                      {a.tamanho ? ' · ' + tamanhoLegivel(a.tamanho) : ''}
+                    </div>
+                    {a.categoria && !dentroDeCategoria && (
+                      <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                        {a.categoria}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => baixar(a)}
+                  disabled={baixando === a.id}
+                  className="w-full grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
+                >
+                  {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
+                </button>
               </div>
-            )}
-          </>
-        )}
+            ))}
+          </div>
+        ) : null}
       </main>
     </div>
   )
