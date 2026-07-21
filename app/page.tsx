@@ -47,12 +47,33 @@ function icone(ext?: string) {
 
 const IMG_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif']
 const PDF_EXTS = ['pdf']
+const CORTE_EXTS = ['studio3', 'studio', 'dxf']
 
 function ehImagem(ext?: string) {
   return !!ext && IMG_EXTS.includes(ext.toLowerCase())
 }
 function ehPdf(ext?: string) {
   return !!ext && PDF_EXTS.includes(ext.toLowerCase())
+}
+function ehCorte(ext?: string) {
+  return !!ext && CORTE_EXTS.includes(ext.toLowerCase())
+}
+
+type FiltroTipo = 'todos' | 'pdf' | 'imagem' | 'corte'
+
+const FILTROS: { valor: FiltroTipo; label: string }[] = [
+  { valor: 'todos', label: 'Todos' },
+  { valor: 'pdf', label: '📄 PDF' },
+  { valor: 'imagem', label: '🖼️ Imagens' },
+  { valor: 'corte', label: '✂️ Corte' },
+]
+
+function passaNoFiltro(ext: string | undefined, filtro: FiltroTipo) {
+  if (filtro === 'todos') return true
+  if (filtro === 'pdf') return ehPdf(ext)
+  if (filtro === 'imagem') return ehImagem(ext)
+  if (filtro === 'corte') return ehCorte(ext)
+  return true
 }
 
 function tamanhoLegivel(bytes?: number) {
@@ -85,6 +106,7 @@ export default function HomePage() {
   const [carregandoPasta, setCarregandoPasta] = useState(false)
 
   const [busca, setBusca] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [resultadoBusca, setResultadoBusca] = useState<Arquivo[] | null>(null)
   const [buscando, setBuscando] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -304,7 +326,8 @@ export default function HomePage() {
   const mostrandoBusca = resultadoBusca !== null
   const dentroDeCategoria = !!categoriaAtiva && !mostrandoBusca
 
-  const listaArquivos = mostrandoBusca ? resultadoBusca : dentroDeCategoria ? arquivosPasta : arquivosRecentes
+  const listaBase = mostrandoBusca ? resultadoBusca : dentroDeCategoria ? arquivosPasta : arquivosRecentes
+  const listaArquivos = (listaBase || []).filter((a) => passaNoFiltro(a.extensao, filtroTipo))
 
   useEffect(() => {
     carregarMiniaturas(listaArquivos)
@@ -431,7 +454,7 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 bg-white border border-border rounded-xl px-5 py-4 mb-6 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+        <div className="flex items-center gap-3 bg-white border border-border rounded-xl px-5 py-4 mb-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
           <span className="text-lg">🔍</span>
           <input
             type="text"
@@ -445,6 +468,23 @@ export default function HomePage() {
               ✕
             </button>
           )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap mb-6">
+          {FILTROS.map((f) => (
+            <button
+              key={f.valor}
+              onClick={() => setFiltroTipo(f.valor)}
+              className={
+                'px-3 py-1.5 rounded-full text-xs font-semibold border transition ' +
+                (filtroTipo === f.valor
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-white border-border text-muted hover:border-primary/40')
+              }
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
 
         {erro && (
@@ -586,10 +626,16 @@ export default function HomePage() {
           <div className="bg-white border border-border rounded-2xl p-10 text-center">
             <div className="text-4xl mb-3">🗂️</div>
             <div className="font-bold mb-1">
-              {mostrandoBusca ? 'Nenhum arquivo encontrado' : 'Nada por aqui ainda'}
+              {filtroTipo !== 'todos'
+                ? 'Nenhum arquivo desse tipo aqui'
+                : mostrandoBusca
+                ? 'Nenhum arquivo encontrado'
+                : 'Nada por aqui ainda'}
             </div>
             <p className="text-sm text-muted">
-              {mostrandoBusca
+              {filtroTipo !== 'todos'
+                ? 'Tente outro filtro ou volte para "Todos".'
+                : mostrandoBusca
                 ? 'Tente buscar por outro nome.'
                 : 'Os arquivos aparecerão aqui após a importação.'}
             </p>
