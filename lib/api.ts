@@ -65,7 +65,8 @@ export const admin = {
   stats: () => api.get('/admin/stats'),
   jobs: () => api.get('/admin/jobs'),
   usuarios: () => api.get('/admin/usuarios'),
-  setStatusUsuario: (uid: string, status: string) =>
-    api.post(`/admin/usuarios/${uid}/status`, { status }),
+  setStatusUsuario: (uid: string, status: string, meses?: number) =>
+    api.post(`/admin/usuarios/${uid}/status`, { status, meses }),
+  excluirUsuario: (uid: string) => api.post(`/admin/usuarios/${uid}/excluir`, {}),
 }
 export default api
