@@ -38,6 +38,16 @@ function icone(ext?: string) {
   return (ext && ICONES[ext.toLowerCase()]) || '📁'
 }
 
+const IMG_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif']
+const PDF_EXTS = ['pdf']
+
+function ehImagem(ext?: string) {
+  return !!ext && IMG_EXTS.includes(ext.toLowerCase())
+}
+function ehPdf(ext?: string) {
+  return !!ext && PDF_EXTS.includes(ext.toLowerCase())
+}
+
 function tamanhoLegivel(bytes?: number) {
   if (!bytes) return ''
   if (bytes < 1024) return bytes + ' B'
@@ -66,6 +76,11 @@ export default function HomePage() {
   const [resultadoBusca, setResultadoBusca] = useState<Arquivo[] | null>(null)
   const [buscando, setBuscando] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Previas: mapa id -> url assinada (sem forcar download), e lightbox aberto
+  const [previews, setPreviews] = useState<Record<string, string>>({})
+  const [lightbox, setLightbox] = useState<{ url: string; nome: string; tipo: 'imagem' | 'pdf' } | null>(null)
+  const [carregandoPreviewId, setCarregandoPreviewId] = useState<string>('')
 
   useEffect(() => {
     useAuth.getState().hydrate()
@@ -151,6 +166,44 @@ export default function HomePage() {
     }, 400)
   }, [busca])
 
+  async function buscarPreview(id: string): Promise<string | null> {
+    if (previews[id]) return previews[id]
+    try {
+      const r = await api.get('/api/catalogo/arquivo/' + id + '/preview')
+      const url = r.data.url
+      setPreviews((prev) => ({ ...prev, [id]: url }))
+      return url
+    } catch (e) {
+      return null
+    }
+  }
+
+  // Carrega miniaturas reais para os arquivos de imagem da lista atual (em paralelo, progressivo)
+  function carregarMiniaturas(lista: Arquivo[]) {
+    lista
+      .filter((a) => ehImagem(a.extensao) && !previews[a.id])
+      .forEach((a) => {
+        api
+          .get('/api/catalogo/arquivo/' + a.id + '/preview')
+          .then((r) => setPreviews((prev) => ({ ...prev, [a.id]: r.data.url })))
+          .catch(() => {})
+      })
+  }
+
+  async function abrirPreviaImagem(a: Arquivo) {
+    setCarregandoPreviewId(a.id)
+    const url = await buscarPreview(a.id)
+    setCarregandoPreviewId('')
+    if (url) setLightbox({ url, nome: a.nome, tipo: 'imagem' })
+  }
+
+  async function abrirPreviaPdf(a: Arquivo) {
+    setCarregandoPreviewId(a.id)
+    const url = await buscarPreview(a.id)
+    setCarregandoPreviewId('')
+    if (url) setLightbox({ url, nome: a.nome, tipo: 'pdf' })
+  }
+
   async function baixar(arq: Arquivo) {
     setBaixando(arq.id)
     try {
@@ -176,6 +229,11 @@ export default function HomePage() {
   const dentroDeCategoria = !!categoriaAtiva && !mostrandoBusca
 
   const listaArquivos = mostrandoBusca ? resultadoBusca : dentroDeCategoria ? arquivosPasta : arquivosRecentes
+
+  useEffect(() => {
+    carregarMiniaturas(listaArquivos)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listaArquivos])
 
   return (
     <div className="min-h-screen bg-bg flex">
@@ -383,9 +441,32 @@ export default function HomePage() {
                 className="bg-white border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-lg hover:border-primary/40 transition"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
-                    {icone(a.extensao)}
-                  </div>
+                  {ehImagem(a.extensao) ? (
+                    <button
+                      onClick={() => abrirPreviaImagem(a)}
+                      className="w-14 h-14 rounded-xl bg-bg flex-shrink-0 overflow-hidden relative group"
+                      title="Ver prévia"
+                    >
+                      {previews[a.id] ? (
+                        <img
+                          src={previews[a.id]}
+                          alt={a.nome}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="w-full h-full flex items-center justify-center text-2xl">
+                          {icone(a.extensao)}
+                        </span>
+                      )}
+                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center text-white opacity-0 group-hover:opacity-100 text-lg">
+                        🔍
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-2xl flex-shrink-0">
+                      {icone(a.extensao)}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <div className="font-semibold text-sm truncate" title={a.nome}>
                       {a.nome}
@@ -401,18 +482,60 @@ export default function HomePage() {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => baixar(a)}
-                  disabled={baixando === a.id}
-                  className="w-full grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
-                >
-                  {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
-                </button>
+                <div className="flex gap-2">
+                  {ehPdf(a.extensao) && (
+                    <button
+                      onClick={() => abrirPreviaPdf(a)}
+                      disabled={carregandoPreviewId === a.id}
+                      className="px-3 py-2.5 rounded-lg border border-border text-sm font-bold disabled:opacity-50"
+                      title="Ver prévia"
+                    >
+                      👁
+                    </button>
+                  )}
+                  <button
+                    onClick={() => baixar(a)}
+                    disabled={baixando === a.id}
+                    className="flex-1 grad-btn text-white text-sm font-bold py-2.5 rounded-lg transition disabled:opacity-50"
+                  >
+                    {baixando === a.id ? 'Gerando link...' : '⬇ Baixar'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         ) : null}
       </main>
+
+      {/* Lightbox de prévia */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6"
+          onClick={() => setLightbox(null)}
+        >
+          <div
+            className="bg-white rounded-2xl overflow-hidden max-w-4xl w-full max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+              <div className="font-semibold text-sm truncate">{lightbox.nome}</div>
+              <button
+                onClick={() => setLightbox(null)}
+                className="text-muted hover:text-text text-xl leading-none px-2"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-bg flex items-center justify-center">
+              {lightbox.tipo === 'imagem' ? (
+                <img src={lightbox.url} alt={lightbox.nome} className="max-w-full max-h-[70vh] object-contain" />
+              ) : (
+                <iframe src={lightbox.url} className="w-full h-[70vh]" title={lightbox.nome} />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
