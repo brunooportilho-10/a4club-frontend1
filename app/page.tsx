@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
-import api, { catalog } from '@/lib/api'
+import api, { catalog, comprovantes } from '@/lib/api'
 
 interface Arquivo {
   id: string
@@ -119,6 +119,16 @@ export default function HomePage() {
   // Status de acesso: null = ainda verificando, 'pago' = liberado, outro = bloqueado
   const [statusAssinatura, setStatusAssinatura] = useState<string | null>(null)
   const [verificandoAcesso, setVerificandoAcesso] = useState(true)
+  const [planoAtual, setPlanoAtual] = useState<string | null>(null)
+  const [validoAteAtual, setValidoAteAtual] = useState<string | null>(null)
+
+  const [painelAssinaturaAberto, setPainelAssinaturaAberto] = useState(false)
+  const [meusComprovantes, setMeusComprovantes] = useState<
+    { id: string; nome: string; mime: string; tamanho: number; enviadoEm: string }[]
+  >([])
+  const [carregandoComprovantes, setCarregandoComprovantes] = useState(false)
+  const [enviandoComprovante, setEnviandoComprovante] = useState(false)
+  const [erroComprovante, setErroComprovante] = useState('')
 
   useEffect(() => {
     useAuth.getState().hydrate()
@@ -150,6 +160,8 @@ export default function HomePage() {
       .then((me) => {
         setEhAdmin(!!me.data.admin)
         setStatusAssinatura(me.data.statusAssinatura || 'pendente')
+        setPlanoAtual(me.data.plano || null)
+        setValidoAteAtual(me.data.validoAte || null)
         if (me.data.admin || me.data.statusAssinatura === 'pago') {
           carregarCatalogo()
         } else {
@@ -316,6 +328,55 @@ export default function HomePage() {
     }
   }
 
+  function abrirPainelAssinatura() {
+    setPainelAssinaturaAberto(true)
+    setErroComprovante('')
+    setCarregandoComprovantes(true)
+    comprovantes
+      .meus()
+      .then((r) => setMeusComprovantes(r.data.comprovantes || []))
+      .catch(() => setMeusComprovantes([]))
+      .finally(() => setCarregandoComprovantes(false))
+  }
+
+  function lerArquivoComoBase64(arquivo: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const leitor = new FileReader()
+      leitor.onload = () => {
+        const resultado = leitor.result as string
+        // remove o prefixo "data:mime;base64,"
+        const base64 = resultado.split(',')[1] || ''
+        resolve(base64)
+      }
+      leitor.onerror = reject
+      leitor.readAsDataURL(arquivo)
+    })
+  }
+
+  async function enviarComprovante(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!arquivo) return
+
+    if (arquivo.size > 8 * 1024 * 1024) {
+      setErroComprovante('Arquivo muito grande (máximo 8 MB).')
+      return
+    }
+
+    setEnviandoComprovante(true)
+    setErroComprovante('')
+    try {
+      const base64 = await lerArquivoComoBase64(arquivo)
+      await comprovantes.enviar(arquivo.name, arquivo.type || 'application/octet-stream', base64)
+      const r = await comprovantes.meus()
+      setMeusComprovantes(r.data.comprovantes || [])
+    } catch (e: any) {
+      setErroComprovante(e.response?.data?.erro || 'Erro ao enviar o comprovante')
+    } finally {
+      setEnviandoComprovante(false)
+    }
+  }
+
   function sair() {
     logout()
     router.push('/login')
@@ -417,6 +478,14 @@ export default function HomePage() {
         </nav>
 
         <div className="space-y-2 pt-6 border-t border-white/10">
+          {!ehAdmin && (
+            <button
+              onClick={abrirPainelAssinatura}
+              className="w-full text-left px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10"
+            >
+              💳 Minha assinatura
+            </button>
+          )}
           {ehAdmin && (
             <button
               onClick={() => router.push('/admin')}
@@ -721,6 +790,97 @@ export default function HomePage() {
           </div>
         ) : null}
       </main>
+
+      {/* Painel Minha assinatura */}
+      {painelAssinaturaAberto && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6"
+          onClick={() => setPainelAssinaturaAberto(false)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="font-bold text-lg">💳 Minha assinatura</h2>
+              <button
+                onClick={() => setPainelAssinaturaAberto(false)}
+                className="text-muted hover:text-text text-xl leading-none px-2"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="bg-bg rounded-xl p-4">
+                <div className="text-xs text-muted mb-1">Status atual</div>
+                <div className="font-bold text-lg">
+                  {statusAssinatura === 'pago' && '🟢 Ativo'}
+                  {statusAssinatura === 'vencido' && '⏰ Vencido'}
+                  {statusAssinatura === 'suspenso' && '🟠 Suspenso'}
+                  {statusAssinatura === 'bloqueado' && '🔴 Bloqueado'}
+                  {statusAssinatura === 'pendente' && '🟡 Pendente'}
+                </div>
+                {validoAteAtual && (
+                  <div className="text-sm text-muted mt-1">
+                    {statusAssinatura === 'vencido' ? 'Venceu em ' : 'Válido até '}
+                    {new Date(validoAteAtual).toLocaleDateString('pt-BR')}
+                  </div>
+                )}
+                {planoAtual && (
+                  <div className="text-xs text-muted mt-1">
+                    Plano: {planoAtual.replace('_', ' ')}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="font-semibold text-sm mb-2">Enviar comprovante de pagamento</div>
+                <p className="text-xs text-muted mb-3">
+                  Envie o comprovante do PIX ou pagamento para o administrador liberar ou renovar seu acesso.
+                  Aceita imagem ou PDF, até 8 MB.
+                </p>
+                <label className="inline-block px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold cursor-pointer">
+                  {enviandoComprovante ? 'Enviando...' : '📎 Escolher arquivo'}
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={enviarComprovante}
+                    disabled={enviandoComprovante}
+                    className="hidden"
+                  />
+                </label>
+                {erroComprovante && (
+                  <div className="text-pink text-xs mt-2">{erroComprovante}</div>
+                )}
+              </div>
+
+              <div>
+                <div className="font-semibold text-sm mb-2">Comprovantes enviados (últimos 2 meses)</div>
+                {carregandoComprovantes ? (
+                  <div className="text-muted text-xs">Carregando...</div>
+                ) : meusComprovantes.length === 0 ? (
+                  <div className="text-muted text-xs">Nenhum comprovante enviado ainda.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {meusComprovantes.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between border border-border rounded-lg px-3 py-2 text-xs"
+                      >
+                        <span className="truncate">{c.nome}</span>
+                        <span className="text-muted flex-shrink-0 ml-2">
+                          {new Date(c.enviadoEm).toLocaleDateString('pt-BR')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox de prévia */}
       {lightbox && (
