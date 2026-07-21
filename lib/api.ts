@@ -1,15 +1,12 @@
 import axios from 'axios'
 import Cookies from 'js-cookie'
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 })
-
 // Interceptor para adicionar token em todas as requisições
 api.interceptors.request.use((config) => {
   const token = Cookies.get('auth_token')
@@ -18,7 +15,6 @@ api.interceptors.request.use((config) => {
   }
   return config
 })
-
 // Interceptor para tratar erros
 api.interceptors.response.use(
   (response) => response,
@@ -34,7 +30,6 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
-
 // ============ AUTH ============
 export const auth = {
   register: (email: string, password: string) =>
@@ -46,7 +41,6 @@ export const auth = {
     Cookies.remove('user')
   },
 }
-
 // ============ CATALOG ============
 export const catalog = {
   home: () => api.get('/api/catalogo/home'),
@@ -59,7 +53,6 @@ export const catalog = {
   removeFavorite: (id: string) =>
     api.delete(`/api/catalogo/arquivo/${id}/favoritar`),
 }
-
 // ============ ADMIN ============
 export const admin = {
   authGoogle: () => api.get('/admin/auth/google'),
@@ -71,6 +64,8 @@ export const admin = {
   jobResume: (jobId: string) => api.post(`/admin/job/${jobId}/retomar`, {}),
   stats: () => api.get('/admin/stats'),
   jobs: () => api.get('/admin/jobs'),
+  usuarios: () => api.get('/admin/usuarios'),
+  setStatusUsuario: (uid: string, status: string) =>
+    api.post(`/admin/usuarios/${uid}/status`, { status }),
 }
-
 export default api
