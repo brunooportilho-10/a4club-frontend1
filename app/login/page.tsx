@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth'
 export default function LoginPage() {
   const router = useRouter()
   const { user, login, isLoading, error } = useAuth()
-  const [email, setEmail] = useState('camila@a4digital.com.br')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [localError, setLocalError] = useState('')
 
@@ -112,12 +112,6 @@ export default function LoginPage() {
       {/* Right side - Form */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-6 sm:px-12 py-12">
         <div className="max-w-md w-full mx-auto">
-          <div className="text-right mb-8">
-            <button className="text-sm text-muted hover:text-text transition">
-              🌙 Tema escuro
-            </button>
-          </div>
-
           <h2 className="text-4xl font-bold mb-2">
             Bem-vindo de <span className="text-primary">volta!</span>
           </h2>
@@ -144,9 +138,6 @@ export default function LoginPage() {
             <div>
               <label className="flex justify-between text-sm font-semibold mb-2">
                 <span>Senha</span>
-                <a href="#" className="text-primary font-semibold">
-                  Esqueceu sua senha?
-                </a>
               </label>
               <div className="flex items-center gap-3 border border-border rounded-lg px-4 py-3 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
                 <span className="text-lg">🔒</span>
@@ -176,28 +167,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="relative my-6">
-            <div className="border-t border-border"></div>
-            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center">
-              <span className="bg-bg px-3 text-sm text-muted">ou</span>
-            </div>
-          </div>
-
-          <button className="w-full border border-border rounded-lg py-3 text-sm font-semibold hover:bg-bg transition mb-3 flex items-center justify-center gap-2">
-            <svg width="18" height="18" viewBox="0 0 48 48">
-              <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z" />
-            </svg>
-            Entrar com Google
-          </button>
-
-          <button className="w-full border border-border rounded-lg py-3 text-sm font-semibold hover:bg-bg transition flex items-center justify-center gap-2">
-            <span style={{ color: '#1877F2', fontWeight: 800, fontSize: '18px' }}>f</span>
-            Entrar com Facebook
-          </button>
-
           <p className="text-center text-sm text-muted mt-8">
             Ainda não tem uma conta?{' '}
-            <a href="#" className="text-primary font-bold hover:underline">
+            <a href="/cadastro" className="text-primary font-bold hover:underline">
               Assine agora
             </a>
           </p>
