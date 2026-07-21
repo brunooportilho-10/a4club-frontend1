@@ -33,6 +33,13 @@ interface Stats {
   espacoUsadoBytes?: number
 }
 
+interface Usuario {
+  uid: string
+  email: string
+  status: string
+  criadoEm?: string
+}
+
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   'https://a4club-backend-novo-production.up.railway.app'
@@ -51,6 +58,8 @@ export default function AdminPage() {
   const [driveConectado, setDriveConectado] = useState<boolean | null>(null)
   const [pastas, setPastas] = useState<Pasta[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
+  const [usuarios, setUsuarios] = useState<Usuario[]>([])
+  const [atualizandoUid, setAtualizandoUid] = useState<string>('')
   const [job, setJob] = useState<Job | null>(null)
   const [historico, setHistorico] = useState<Job[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -79,6 +88,8 @@ export default function AdminPage() {
       setStats(s.data)
       const js = await admin.jobs()
       setHistorico(js.data.jobs || [])
+      const us = await admin.usuarios()
+      setUsuarios(us.data.usuarios || [])
       if (s.data.importacaoAtiva) {
         acompanharJob(s.data.importacaoAtiva)
       }
@@ -88,6 +99,18 @@ export default function AdminPage() {
       setCarregando(false)
     }
   }, [])
+
+  async function alterarStatusUsuario(uid: string, status: string) {
+    setAtualizandoUid(uid)
+    try {
+      await admin.setStatusUsuario(uid, status)
+      setUsuarios((prev) => prev.map((u) => (u.uid === uid ? { ...u, status } : u)))
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao atualizar assinante')
+    } finally {
+      setAtualizandoUid('')
+    }
+  }
 
   useEffect(() => {
     if (!token) return
@@ -415,6 +438,61 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {/* Assinantes */}
+        <div className="bg-white rounded-2xl border border-border p-6 mb-8">
+          <h2 className="font-bold text-lg mb-4">👥 Assinantes ({usuarios.length})</h2>
+          {usuarios.length === 0 ? (
+            <div className="text-muted text-sm">
+              Nenhum assinante ainda. A lista aparece aqui assim que alguém fizer login.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {usuarios.map((u) => {
+                const badge =
+                  u.status === 'pago'
+                    ? { emoji: '🟢', texto: 'Pago', cor: 'text-primary' }
+                    : u.status === 'bloqueado'
+                    ? { emoji: '🔴', texto: 'Bloqueado', cor: 'text-pink' }
+                    : { emoji: '🟡', texto: 'Pendente', cor: 'text-amber' }
+                return (
+                  <div
+                    key={u.uid}
+                    className="flex items-center justify-between border border-border rounded-lg px-4 py-3 flex-wrap gap-2"
+                  >
+                    <div>
+                      <div className="font-semibold text-sm">{u.email}</div>
+                      <div className={'text-xs font-semibold ' + badge.cor}>
+                        {badge.emoji} {badge.texto}
+                        {u.criadoEm ? ' · desde ' + new Date(u.criadoEm).toLocaleDateString('pt-BR') : ''}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {u.status !== 'pago' && (
+                        <button
+                          onClick={() => alterarStatusUsuario(u.uid, 'pago')}
+                          disabled={atualizandoUid === u.uid}
+                          className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold disabled:opacity-40"
+                        >
+                          ✅ Marcar como pago
+                        </button>
+                      )}
+                      {u.status !== 'bloqueado' && (
+                        <button
+                          onClick={() => alterarStatusUsuario(u.uid, 'bloqueado')}
+                          disabled={atualizandoUid === u.uid}
+                          className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold disabled:opacity-40"
+                        >
+                          🚫 Bloquear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Manutenção */}
         <div className="bg-white rounded-2xl border border-border p-6 mb-8">
