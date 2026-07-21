@@ -30,11 +30,20 @@ interface Stats {
   totalArquivos: number
   totalUsuarios: number
   importacaoAtiva?: string | null
+  espacoUsadoBytes?: number
 }
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   'https://a4club-backend-novo-production.up.railway.app'
+
+function espacoLegivel(bytes?: number) {
+  if (!bytes) return '0 MB'
+  const gb = bytes / (1024 * 1024 * 1024)
+  if (gb >= 1) return gb.toFixed(2) + ' GB'
+  const mb = bytes / (1024 * 1024)
+  return mb.toFixed(1) + ' MB'
+}
 
 export default function AdminPage() {
   const router = useRouter()
@@ -146,8 +155,10 @@ export default function AdminPage() {
     try {
       const r = await api.post('/admin/backfill-colecoes', {})
       setMensagemOk(
-        `Recalculado: ${r.data.totalArquivos} arquivos, ${r.data.categorias} categorias, ${r.data.colecoes} pastas.`
+        `Recalculado: ${r.data.totalArquivos} arquivos, ${r.data.categorias} categorias, ${r.data.colecoes} coleções, ${r.data.pastas ?? 0} pastas.`
       )
+      const s = await admin.stats()
+      setStats(s.data)
     } catch (e: any) {
       setErro(e.response?.data?.erro || 'Erro ao recalcular as pastas')
     } finally {
@@ -219,7 +230,7 @@ export default function AdminPage() {
         )}
 
         {/* Estatísticas */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-2xl border border-border p-5">
             <div className="text-3xl font-bold text-primary">
               {stats ? stats.totalArquivos : '—'}
@@ -231,6 +242,12 @@ export default function AdminPage() {
               {stats ? stats.totalUsuarios : '—'}
             </div>
             <div className="text-sm text-muted mt-1">Usuários</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-border p-5">
+            <div className="text-3xl font-bold text-primary">
+              {stats ? espacoLegivel(stats.espacoUsadoBytes) : '—'}
+            </div>
+            <div className="text-sm text-muted mt-1">Espaço usado (R2)</div>
           </div>
           <div className="bg-white rounded-2xl border border-border p-5">
             <div className="text-3xl font-bold">
