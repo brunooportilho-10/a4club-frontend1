@@ -175,6 +175,51 @@ export default function HomePage() {
     return segmentosCaminho.slice(0, indice + 1).join('/')
   }
 
+  const [excluindo, setExcluindo] = useState<string>('')
+
+  async function excluirPastaAtual() {
+    const nome = segmentosCaminho[segmentosCaminho.length - 1] || categoriaAtiva
+    const aviso = caminhoAtual
+      ? `Excluir a pasta "${nome}" e TUDO dentro dela? Essa ação não pode ser desfeita.`
+      : `Excluir a categoria inteira "${categoriaAtiva}" e TODOS os arquivos dela? Essa ação não pode ser desfeita.`
+    if (!window.confirm(aviso)) return
+
+    setExcluindo('pasta')
+    try {
+      const r = await api.post('/admin/pasta/excluir', {
+        categoria: categoriaAtiva,
+        caminho: caminhoAtual,
+      })
+      if (r.data.categoriaRemovida) {
+        voltarInicio()
+      } else {
+        // volta um nivel (para a pasta pai) dentro da mesma categoria
+        const pai = segmentosCaminho.slice(0, -1).join('/')
+        navegarPara(categoriaAtiva, pai)
+      }
+      carregarCatalogo()
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao excluir a pasta')
+    } finally {
+      setExcluindo('')
+    }
+  }
+
+  async function excluirArquivoIndividual(a: Arquivo) {
+    if (!window.confirm(`Excluir o arquivo "${a.nome}"? Essa ação não pode ser desfeita.`)) return
+    setExcluindo(a.id)
+    try {
+      await api.post('/admin/arquivo/' + a.id + '/excluir', {})
+      setArquivosPasta((prev) => prev.filter((x) => x.id !== a.id))
+      setArquivosRecentes((prev) => prev.filter((x) => x.id !== a.id))
+      setResultadoBusca((prev) => (prev ? prev.filter((x) => x.id !== a.id) : prev))
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao excluir o arquivo')
+    } finally {
+      setExcluindo('')
+    }
+  }
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (!busca.trim()) {
@@ -450,32 +495,43 @@ export default function HomePage() {
         )}
 
         {dentroDeCategoria && (
-          <div className="flex items-center gap-2 text-sm mb-4 flex-wrap">
-            <button onClick={voltarInicio} className="text-muted hover:text-primary">
-              Início
-            </button>
-            <span className="text-muted">/</span>
-            <button
-              onClick={() => navegarPara(categoriaAtiva, '')}
-              className={!caminhoAtual ? 'font-bold text-primary' : 'text-muted hover:text-primary'}
-            >
-              {categoriaAtiva}
-            </button>
-            {segmentosCaminho.map((seg, i) => (
-              <span key={i} className="flex items-center gap-2">
-                <span className="text-muted">/</span>
-                <button
-                  onClick={() => navegarPara(categoriaAtiva, caminhoAteSegmento(i))}
-                  className={
-                    i === segmentosCaminho.length - 1
-                      ? 'font-bold text-primary'
-                      : 'text-muted hover:text-primary'
-                  }
-                >
-                  {seg}
-                </button>
-              </span>
-            ))}
+          <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+            <div className="flex items-center gap-2 text-sm flex-wrap">
+              <button onClick={voltarInicio} className="text-muted hover:text-primary">
+                Início
+              </button>
+              <span className="text-muted">/</span>
+              <button
+                onClick={() => navegarPara(categoriaAtiva, '')}
+                className={!caminhoAtual ? 'font-bold text-primary' : 'text-muted hover:text-primary'}
+              >
+                {categoriaAtiva}
+              </button>
+              {segmentosCaminho.map((seg, i) => (
+                <span key={i} className="flex items-center gap-2">
+                  <span className="text-muted">/</span>
+                  <button
+                    onClick={() => navegarPara(categoriaAtiva, caminhoAteSegmento(i))}
+                    className={
+                      i === segmentosCaminho.length - 1
+                        ? 'font-bold text-primary'
+                        : 'text-muted hover:text-primary'
+                    }
+                  >
+                    {seg}
+                  </button>
+                </span>
+              ))}
+            </div>
+            {ehAdmin && (
+              <button
+                onClick={excluirPastaAtual}
+                disabled={excluindo === 'pasta'}
+                className="text-xs font-semibold text-pink hover:underline disabled:opacity-50"
+              >
+                {excluindo === 'pasta' ? 'Excluindo...' : '🗑 Excluir esta pasta'}
+              </button>
+            )}
           </div>
         )}
 
@@ -594,6 +650,16 @@ export default function HomePage() {
                       title="Ver prévia"
                     >
                       👁
+                    </button>
+                  )}
+                  {ehAdmin && (
+                    <button
+                      onClick={() => excluirArquivoIndividual(a)}
+                      disabled={excluindo === a.id}
+                      className="w-9 h-9 rounded-lg border border-pink/30 text-pink text-sm disabled:opacity-50 flex items-center justify-center"
+                      title="Excluir arquivo"
+                    >
+                      🗑
                     </button>
                   )}
                   <button
