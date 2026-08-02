@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
-import api, { catalog, comprovantes } from '@/lib/api'
+import api, { catalog, comprovantes, presenca } from '@/lib/api'
 
 interface Arquivo {
   id: string
@@ -93,6 +93,7 @@ export default function HomePage() {
 
   const [arquivosRecentes, setArquivosRecentes] = useState<Arquivo[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
+  const [onlineAgora, setOnlineAgora] = useState<number | null>(null)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [ehAdmin, setEhAdmin] = useState(false)
   const [carregando, setCarregando] = useState(true)
@@ -137,6 +138,24 @@ export default function HomePage() {
     }, 1500)
     return () => clearTimeout(t)
   }, [router])
+
+  useEffect(() => {
+    let ativo = true
+    async function buscarOnline() {
+      try {
+        const r = await presenca.publico()
+        if (ativo) setOnlineAgora(r.data.online)
+      } catch (e) {
+        /* silencioso */
+      }
+    }
+    buscarOnline()
+    const intervalo = setInterval(buscarOnline, 30000)
+    return () => {
+      ativo = false
+      clearInterval(intervalo)
+    }
+  }, [])
 
   const carregarCatalogo = useCallback(async () => {
     setErro('')
@@ -563,7 +582,7 @@ export default function HomePage() {
         )}
 
         {!dentroDeCategoria && !mostrandoBusca && stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
             <div className="bg-white border border-border rounded-2xl p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-lg flex-shrink-0">
                 📁
@@ -598,6 +617,18 @@ export default function HomePage() {
               <div className="min-w-0">
                 <div className="text-lg font-bold leading-tight">{numeroFormatado(stats.novosSemana)}</div>
                 <div className="text-[11px] text-muted leading-tight">Novos esta semana</div>
+              </div>
+            </div>
+            <div className="bg-white border border-border rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-green/10 flex items-center justify-center text-lg flex-shrink-0 relative">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green"></span>
+                </span>
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold leading-tight">{onlineAgora ?? '—'}</div>
+                <div className="text-[11px] text-muted leading-tight">Online agora</div>
               </div>
             </div>
           </div>
