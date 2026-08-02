@@ -12,6 +12,12 @@ interface Usuario {
   validoAte?: string
   plano?: string
   whatsapp?: string
+  categoriasPermitidas?: string[]
+}
+
+interface CategoriaOpcao {
+  nome: string
+  total: number
 }
 
 const PRAZOS = [
@@ -53,12 +59,17 @@ export default function AdminClientesPage() {
   const [senhaGerada, setSenhaGerada] = useState<{ uid: string; senha: string } | null>(null)
   const [comprovantesAbertos, setComprovantesAbertos] = useState<Record<string, any[]>>({})
   const [carregandoComprovantesUid, setCarregandoComprovantesUid] = useState('')
+  const [categorias, setCategorias] = useState<CategoriaOpcao[]>([])
+  const [acessoAbertoUid, setAcessoAbertoUid] = useState('')
+  const [selecaoTemp, setSelecaoTemp] = useState<Record<string, string[]>>({})
+  const [salvandoAcessoUid, setSalvandoAcessoUid] = useState('')
 
   const carregar = useCallback(async () => {
     setErro('')
     try {
-      const us = await admin.usuarios()
+      const [us, cats] = await Promise.all([admin.usuarios(), admin.categorias()])
       setUsuarios(us.data.usuarios || [])
+      setCategorias(cats.data.categorias || [])
     } catch (e: any) {
       setErro(e.response?.data?.erro || 'Erro ao carregar assinantes')
     } finally {
@@ -135,6 +146,36 @@ export default function AdminClientesPage() {
       setErro(e.response?.data?.erro || 'Erro ao resetar senha')
     } finally {
       setAtualizandoUid('')
+    }
+  }
+
+  function abrirAcesso(u: Usuario) {
+    if (acessoAbertoUid === u.uid) {
+      setAcessoAbertoUid('')
+      return
+    }
+    setSelecaoTemp((prev) => ({ ...prev, [u.uid]: u.categoriasPermitidas || [] }))
+    setAcessoAbertoUid(u.uid)
+  }
+
+  function alternarCategoria(uid: string, nome: string) {
+    setSelecaoTemp((prev) => {
+      const atual = prev[uid] || []
+      const nova = atual.includes(nome) ? atual.filter((c) => c !== nome) : [...atual, nome]
+      return { ...prev, [uid]: nova }
+    })
+  }
+
+  async function salvarAcesso(uid: string) {
+    setSalvandoAcessoUid(uid)
+    try {
+      await admin.setAcessoUsuario(uid, selecaoTemp[uid] || [])
+      await carregar()
+      setAcessoAbertoUid('')
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao salvar categorias liberadas')
+    } finally {
+      setSalvandoAcessoUid('')
     }
   }
 
@@ -309,7 +350,72 @@ export default function AdminClientesPage() {
                         ? '📎 Ocultar comprovantes'
                         : '📎 Ver comprovantes'}
                     </button>
+                    <button
+                      onClick={() => abrirAcesso(u)}
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold"
+                    >
+                      📁 Categorias liberadas ({(u.categoriasPermitidas || []).length})
+                    </button>
                   </div>
+
+                  {acessoAbertoUid === u.uid && (
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <div className="text-xs text-muted mb-2">
+                        Marque só as categorias que {u.email} pode ver no catálogo. Sem nenhuma marcada, o cliente não vê nada.
+                      </div>
+                      {categorias.length === 0 ? (
+                        <div className="text-xs text-muted">Nenhuma categoria importada ainda.</div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-3 max-h-56 overflow-y-auto pr-1">
+                          {categorias.map((c) => {
+                            const marcado = (selecaoTemp[u.uid] || []).includes(c.nome)
+                            return (
+                              <label
+                                key={c.nome}
+                                className={
+                                  'flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg border cursor-pointer ' +
+                                  (marcado
+                                    ? 'border-primary bg-primary/10 font-semibold'
+                                    : 'border-border')
+                                }
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={marcado}
+                                  onChange={() => alternarCategoria(u.uid, c.nome)}
+                                  className="accent-primary"
+                                />
+                                <span className="truncate">{c.nome}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => salvarAcesso(u.uid)}
+                          disabled={salvandoAcessoUid === u.uid}
+                          className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold disabled:opacity-40"
+                        >
+                          {salvandoAcessoUid === u.uid ? 'Salvando...' : '💾 Salvar acesso'}
+                        </button>
+                        <button
+                          onClick={() =>
+                            setSelecaoTemp((prev) => ({ ...prev, [u.uid]: categorias.map((c) => c.nome) }))
+                          }
+                          className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold"
+                        >
+                          Marcar todas
+                        </button>
+                        <button
+                          onClick={() => setSelecaoTemp((prev) => ({ ...prev, [u.uid]: [] }))}
+                          className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold"
+                        >
+                          Desmarcar todas
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {comprovantesAbertos[u.uid] && (
                     <div className="mt-3 pt-3 border-t border-border">
