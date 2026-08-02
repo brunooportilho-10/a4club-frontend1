@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
+import { presenca } from '@/lib/api'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -10,6 +11,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [localError, setLocalError] = useState('')
+  const [onlineAgora, setOnlineAgora] = useState<number | null>(null)
 
   const [mostrarEsqueciSenha, setMostrarEsqueciSenha] = useState(false)
   const [emailReset, setEmailReset] = useState('')
@@ -23,6 +25,24 @@ export default function LoginPage() {
       router.push('/')
     }
   }, [user, router])
+
+  useEffect(() => {
+    let ativo = true
+    async function buscarOnline() {
+      try {
+        const r = await presenca.publico()
+        if (ativo) setOnlineAgora(r.data.online)
+      } catch (e) {
+        /* silencioso */
+      }
+    }
+    buscarOnline()
+    const intervalo = setInterval(buscarOnline, 30000)
+    return () => {
+      ativo = false
+      clearInterval(intervalo)
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -134,12 +154,34 @@ export default function LoginPage() {
               +9K
             </div>
           </div>
+          {onlineAgora !== null && onlineAgora > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/20 flex items-center gap-2 text-sm">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green"></span>
+              </span>
+              <span className="text-white/90">
+                <strong>{onlineAgora}</strong> {onlineAgora === 1 ? 'pessoa usando' : 'pessoas usando'} agora
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Right side - Form */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-6 sm:px-12 py-12">
         <div className="max-w-md w-full mx-auto">
+          {onlineAgora !== null && onlineAgora > 0 && (
+            <div className="lg:hidden flex items-center gap-2 text-sm text-muted mb-6 bg-green/10 border border-green/30 rounded-full px-4 py-2 w-fit">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green"></span>
+              </span>
+              <span>
+                <strong>{onlineAgora}</strong> {onlineAgora === 1 ? 'pessoa usando' : 'pessoas usando'} o A4 CLUB agora
+              </span>
+            </div>
+          )}
           {!mostrarEsqueciSenha ? (
             <>
               <h2 className="text-4xl font-bold mb-2">
