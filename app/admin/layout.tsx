@@ -1,7 +1,9 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/lib/auth'
 
 const ABAS = [
   { href: '/admin', label: '📦 Importação' },
@@ -11,6 +13,10 @@ const ABAS = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+
+  useEffect(() => {
+    useAuth.getState().hydrate()
+  }, [])
 
   return (
     <div className="min-h-screen bg-bg">
