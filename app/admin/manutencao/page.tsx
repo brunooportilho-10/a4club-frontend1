@@ -1,18 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '@/lib/auth'
 import api from '@/lib/api'
+
+interface JobAgrupar {
+  id: string
+  status: string
+  arquivosLidos?: number
+  gruposEncontrados?: number
+  arquivosMovidos?: number
+  pastasCriadas?: number
+  mensagem?: string
+}
 
 export default function AdminManutencaoPage() {
   const { token } = useAuth()
   const [erro, setErro] = useState('')
   const [mensagemOk, setMensagemOk] = useState('')
   const [recalculando, setRecalculando] = useState(false)
-  const [agrupando, setAgrupando] = useState(false)
+  const [jobAgrupar, setJobAgrupar] = useState<JobAgrupar | null>(null)
   const [resetando, setResetando] = useState(false)
   const [mostrarConfirmReset, setMostrarConfirmReset] = useState(false)
   const [textoConfirm, setTextoConfirm] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [])
 
   async function recalcularPastas() {
     setRecalculando(true)
@@ -30,19 +47,43 @@ export default function AdminManutencaoPage() {
     }
   }
 
+  function acompanharAgrupamento(jobId: string) {
+    if (pollRef.current) clearInterval(pollRef.current)
+    const buscar = async () => {
+      try {
+        const r = await api.get(`/admin/job/${jobId}`)
+        const j: JobAgrupar = r.data.job
+        setJobAgrupar(j)
+        if (['concluido', 'erro', 'interrompido'].includes(j.status)) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          if (j.status === 'concluido') {
+            setMensagemOk(
+              `Agrupamento concluído: ${j.gruposEncontrados ?? 0} pastas novas criadas, ${j.arquivosMovidos ?? 0} arquivos organizados (de ${j.arquivosLidos ?? 0} analisados).`
+            )
+          } else if (j.status === 'erro') {
+            setErro(j.mensagem || 'Erro ao agrupar arquivos')
+          } else {
+            setErro('O servidor reiniciou durante o agrupamento. Clique em agrupar novamente (o que já foi organizado é mantido).')
+          }
+        }
+      } catch (e) {
+        /* mantem o poll */
+      }
+    }
+    buscar()
+    pollRef.current = setInterval(buscar, 2500)
+  }
+
   async function agruparArquivos() {
-    setAgrupando(true)
     setErro('')
     setMensagemOk('')
+    setJobAgrupar(null)
     try {
       const r = await api.post('/admin/agrupar-arquivos', {})
-      setMensagemOk(
-        `Agrupamento concluído: ${r.data.gruposEncontrados} pastas novas criadas, ${r.data.arquivosMovidos} arquivos organizados (de ${r.data.arquivosLidos} analisados).`
-      )
+      acompanharAgrupamento(r.data.jobId)
     } catch (e: any) {
-      setErro(e.response?.data?.erro || 'Erro ao agrupar arquivos')
-    } finally {
-      setAgrupando(false)
+      setErro(e.response?.data?.erro || 'Erro ao iniciar o agrupamento')
     }
   }
 
@@ -63,6 +104,8 @@ export default function AdminManutencaoPage() {
       setResetando(false)
     }
   }
+
+  const agrupando = !!jobAgrupar && ['iniciando', 'lendo', 'movendo'].includes(jobAgrupar.status)
 
   return (
     <>
@@ -109,15 +152,35 @@ export default function AdminManutencaoPage() {
           dentro de uma pastinha com esse nome, em vez de deixá-los espalhados na lista.
           Só agrupa quando há 2 ou mais arquivos com o mesmo nome — arquivo sozinho
           continua solto. Importações futuras já saem organizadas automaticamente;
-          use este botão para reorganizar o que já foi importado antes.
+          use este botão para reorganizar o que já foi importado antes. Roda em segundo
+          plano no servidor (não trava a tela), mas se você sair desta página o
+          acompanhamento do progresso se perde — o processo continua rodando mesmo assim.
         </p>
         <button
           onClick={agruparArquivos}
           disabled={agrupando}
           className="px-4 py-2 rounded-lg border border-primary text-primary text-sm font-bold disabled:opacity-40"
         >
-          {agrupando ? 'Agrupando (pode demorar alguns minutos)...' : '📦 Agrupar arquivos por nome'}
+          {agrupando ? '⏳ Agrupando...' : '📦 Agrupar arquivos por nome'}
         </button>
+
+        {jobAgrupar && agrupando && (
+          <div className="mt-4 bg-primary/5 border border-primary/30 rounded-lg px-4 py-3 text-sm">
+            <div className="font-semibold mb-1">
+              {jobAgrupar.status === 'lendo' && '🔍 Analisando arquivos...'}
+              {jobAgrupar.status === 'movendo' && '📂 Organizando pastas...'}
+              {jobAgrupar.status === 'iniciando' && '⏳ Iniciando...'}
+            </div>
+            <div className="text-muted text-xs">
+              {jobAgrupar.mensagem}
+              {jobAgrupar.status === 'movendo' && (
+                <>
+                  {' '}· {jobAgrupar.pastasCriadas ?? 0} pastas criadas · {jobAgrupar.arquivosMovidos ?? 0} arquivos movidos
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-pink/30 p-6">
