@@ -78,5 +78,10 @@ export const admin = {
   excluirUsuario: (uid: string) => api.post(`/admin/usuarios/${uid}/excluir`, {}),
   resetarSenha: (uid: string) => api.post(`/admin/usuarios/${uid}/resetar-senha`, {}),
   iniciarBackup: () => api.post('/admin/backup/iniciar', {}),
+  categorias: () => api.get('/admin/categorias'),
+  setAcessoUsuario: (uid: string, categorias: string[]) =>
+    api.post(`/admin/usuarios/${uid}/acesso`, { categorias }),
+  agruparArquivos: (categoria?: string) =>
+    api.post('/admin/agrupar-arquivos', categoria ? { categoria } : {}),
 }
 export default api
