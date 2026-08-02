@@ -26,10 +26,28 @@ export default function AdminManutencaoPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
+    if (!token) return
+    // Se ja existe um agrupamento rodando no servidor (ex: a pagina foi recarregada),
+    // reconecta o acompanhamento automaticamente em vez de deixar a tela "cega".
+    ;(async () => {
+      try {
+        const r = await api.get('/admin/jobs')
+        const jobs = r.data.jobs || []
+        const emAndamento = jobs.find(
+          (j: any) => j.tipo === 'agrupar' && ['iniciando', 'lendo', 'movendo'].includes(j.status)
+        )
+        if (emAndamento) {
+          setJobAgrupar(emAndamento)
+          acompanharAgrupamento(emAndamento.id)
+        }
+      } catch (e) {
+        /* silencioso - so eh uma conveniencia */
+      }
+    })()
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [])
+  }, [token])
 
   async function recalcularPastas() {
     setRecalculando(true)
@@ -83,6 +101,11 @@ export default function AdminManutencaoPage() {
       const r = await api.post('/admin/agrupar-arquivos', {})
       acompanharAgrupamento(r.data.jobId)
     } catch (e: any) {
+      if (e.response?.status === 409 && e.response?.data?.jobId) {
+        // Ja tem um rodando (ex: clique duplicado, ou continuando de antes) - so reconecta
+        acompanharAgrupamento(e.response.data.jobId)
+        return
+      }
       setErro(e.response?.data?.erro || 'Erro ao iniciar o agrupamento')
     }
   }
