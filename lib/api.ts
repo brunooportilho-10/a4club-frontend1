@@ -83,5 +83,12 @@ export const admin = {
     api.post(`/admin/usuarios/${uid}/acesso`, { categorias }),
   agruparArquivos: (categoria?: string) =>
     api.post('/admin/agrupar-arquivos', categoria ? { categoria } : {}),
+  online: () => api.get('/admin/online'),
+}
+// ============ PRESENCA (quem esta usando o sistema agora) ============
+export const presenca = {
+  ping: () => api.post('/api/presenca', {}),
+  sair: () => api.post('/api/presenca/sair', {}),
+  publico: () => api.get('/public/online'),
 }
 export default api
