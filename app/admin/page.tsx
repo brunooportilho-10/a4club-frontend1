@@ -196,8 +196,16 @@ export default function AdminImportacaoPage() {
       </div>
 
       {erro && (
-        <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm mb-6">
-          {erro}
+        <div className="bg-pink/10 border border-pink text-pink px-4 py-3 rounded-lg text-sm mb-6 flex items-center justify-between flex-wrap gap-3">
+          <span>{erro}</span>
+          {erro.includes('invalid_grant') && (
+            <a
+              href={BACKEND_URL + '/auth/google'}
+              className="inline-block px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold whitespace-nowrap"
+            >
+              🔄 Reconectar Google Drive
+            </a>
+          )}
         </div>
       )}
 
@@ -218,7 +226,16 @@ export default function AdminImportacaoPage() {
           <div className="text-3xl font-bold">
             {driveConectado === null ? '—' : driveConectado ? '🟢' : '🔴'}
           </div>
-          <div className="text-sm text-muted mt-1">Google Drive</div>
+          <div className="text-sm text-muted mt-1 flex items-center justify-between gap-2">
+            <span>Google Drive</span>
+            <a
+              href={BACKEND_URL + '/auth/google'}
+              className="text-primary font-semibold hover:underline"
+              title="Reautoriza o acesso ao Google Drive (gera um novo token)"
+            >
+              🔄 Reconectar
+            </a>
+          </div>
         </div>
       </div>
 
