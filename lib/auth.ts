@@ -8,6 +8,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth'
 import { auth as fb } from './firebase'
+import { presenca } from './api'
 
 export interface User { id: string; email: string; plano?: string }
 
@@ -43,6 +44,23 @@ function salvar(set: any, uid: string, email: string | null, token: string) {
 }
 
 let ouvindo = false
+let pingInterval: ReturnType<typeof setInterval> | null = null
+const INTERVALO_PING_MS = 45 * 1000
+
+function iniciarHeartbeat() {
+  if (pingInterval) return
+  presenca.ping().catch(() => {})
+  pingInterval = setInterval(() => {
+    presenca.ping().catch(() => {})
+  }, INTERVALO_PING_MS)
+}
+
+function pararHeartbeat() {
+  if (pingInterval) {
+    clearInterval(pingInterval)
+    pingInterval = null
+  }
+}
 
 export const useAuth = create<AuthStore>((set) => ({
   user: null,
@@ -84,6 +102,8 @@ export const useAuth = create<AuthStore>((set) => ({
   },
 
   logout: () => {
+    pararHeartbeat()
+    presenca.sair().catch(() => {})
     Cookies.remove('auth_token')
     Cookies.remove('user')
     signOut(fb)
@@ -94,8 +114,13 @@ export const useAuth = create<AuthStore>((set) => ({
     if (typeof window === 'undefined' || ouvindo) return
     ouvindo = true
     onAuthStateChanged(fb, async (u) => {
-      if (u) salvar(set, u.uid, u.email, await u.getIdToken())
-      else set({ user: null, token: null })
+      if (u) {
+        salvar(set, u.uid, u.email, await u.getIdToken())
+        iniciarHeartbeat()
+      } else {
+        pararHeartbeat()
+        set({ user: null, token: null })
+      }
     })
   },
 }))
