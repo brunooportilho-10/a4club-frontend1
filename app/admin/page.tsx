@@ -33,6 +33,12 @@ interface Stats {
   espacoUsadoBytes?: number
 }
 
+interface OnlineUsuario {
+  uid: string
+  email: string
+  ultimoPing: string
+}
+
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   'https://a4club-backend-novo-production.up.railway.app'
@@ -72,11 +78,32 @@ export default function AdminImportacaoPage() {
   const [historico, setHistorico] = useState<Job[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+  const [online, setOnline] = useState<{ online: number; usuarios: OnlineUsuario[] } | null>(null)
+  const [mostrarOnline, setMostrarOnline] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     useAuth.getState().hydrate()
   }, [])
+
+  useEffect(() => {
+    if (!token) return
+    let ativo = true
+    async function buscarOnline() {
+      try {
+        const r = await admin.online()
+        if (ativo) setOnline({ online: r.data.online, usuarios: r.data.usuarios || [] })
+      } catch (e) {
+        /* silencioso */
+      }
+    }
+    buscarOnline()
+    const intervalo = setInterval(buscarOnline, 30000)
+    return () => {
+      ativo = false
+      clearInterval(intervalo)
+    }
+  }, [token])
 
   const carregarTudo = useCallback(async () => {
     setErro('')
@@ -209,7 +236,7 @@ export default function AdminImportacaoPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-2xl border border-border p-5">
           <div className="text-3xl font-bold text-primary">
             {stats ? stats.totalArquivos : '—'}
@@ -237,7 +264,40 @@ export default function AdminImportacaoPage() {
             </a>
           </div>
         </div>
+        <button
+          onClick={() => setMostrarOnline((v) => !v)}
+          className="bg-white rounded-2xl border border-border p-5 text-left hover:border-primary/40 transition"
+        >
+          <div className="text-3xl font-bold text-primary flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green"></span>
+            </span>
+            {online ? online.online : '—'}
+          </div>
+          <div className="text-sm text-muted mt-1">Online agora {online && online.online > 0 ? '· ver quem' : ''}</div>
+        </button>
       </div>
+
+      {mostrarOnline && online && (
+        <div className="bg-white rounded-2xl border border-border p-5 mb-8">
+          <div className="font-semibold text-sm mb-3">🟢 Quem está online agora</div>
+          {online.usuarios.length === 0 ? (
+            <div className="text-sm text-muted">Ninguém usando o sistema no momento.</div>
+          ) : (
+            <div className="space-y-1.5">
+              {online.usuarios.map((u) => (
+                <div key={u.uid} className="flex items-center justify-between text-sm border-b border-border last:border-0 py-1.5">
+                  <span>{u.email}</span>
+                  <span className="text-muted text-xs">
+                    ativo há {Math.max(0, Math.round((Date.now() - new Date(u.ultimoPing).getTime()) / 1000))}s
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {stats && (() => {
         const c = custoEstimadoR2(stats.espacoUsadoBytes)
