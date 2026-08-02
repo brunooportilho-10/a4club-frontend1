@@ -9,6 +9,7 @@ export default function AdminManutencaoPage() {
   const [erro, setErro] = useState('')
   const [mensagemOk, setMensagemOk] = useState('')
   const [recalculando, setRecalculando] = useState(false)
+  const [agrupando, setAgrupando] = useState(false)
   const [resetando, setResetando] = useState(false)
   const [mostrarConfirmReset, setMostrarConfirmReset] = useState(false)
   const [textoConfirm, setTextoConfirm] = useState('')
@@ -26,6 +27,22 @@ export default function AdminManutencaoPage() {
       setErro(e.response?.data?.erro || 'Erro ao recalcular as pastas')
     } finally {
       setRecalculando(false)
+    }
+  }
+
+  async function agruparArquivos() {
+    setAgrupando(true)
+    setErro('')
+    setMensagemOk('')
+    try {
+      const r = await api.post('/admin/agrupar-arquivos', {})
+      setMensagemOk(
+        `Agrupamento concluído: ${r.data.gruposEncontrados} pastas novas criadas, ${r.data.arquivosMovidos} arquivos organizados (de ${r.data.arquivosLidos} analisados).`
+      )
+    } catch (e: any) {
+      setErro(e.response?.data?.erro || 'Erro ao agrupar arquivos')
+    } finally {
+      setAgrupando(false)
     }
   }
 
@@ -82,6 +99,24 @@ export default function AdminManutencaoPage() {
           className="px-4 py-2 rounded-lg border border-primary text-primary text-sm font-bold disabled:opacity-40"
         >
           {recalculando ? 'Recalculando...' : '🔧 Recalcular pastas'}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-border p-6 mb-8">
+        <h2 className="font-bold text-lg mb-2">📦 Agrupar arquivos por nome</h2>
+        <p className="text-sm text-muted mb-4">
+          Junta arquivos soltos que têm o mesmo nome (ex: "Bolsa.jpeg" + "Bolsa.rar")
+          dentro de uma pastinha com esse nome, em vez de deixá-los espalhados na lista.
+          Só agrupa quando há 2 ou mais arquivos com o mesmo nome — arquivo sozinho
+          continua solto. Importações futuras já saem organizadas automaticamente;
+          use este botão para reorganizar o que já foi importado antes.
+        </p>
+        <button
+          onClick={agruparArquivos}
+          disabled={agrupando}
+          className="px-4 py-2 rounded-lg border border-primary text-primary text-sm font-bold disabled:opacity-40"
+        >
+          {agrupando ? 'Agrupando (pode demorar alguns minutos)...' : '📦 Agrupar arquivos por nome'}
         </button>
       </div>
 
