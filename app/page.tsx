@@ -120,6 +120,7 @@ export default function HomePage() {
   // Status de acesso: null = ainda verificando, 'pago' = liberado, outro = bloqueado
   const [statusAssinatura, setStatusAssinatura] = useState<string | null>(null)
   const [verificandoAcesso, setVerificandoAcesso] = useState(true)
+  const [erroVerificacaoAcesso, setErroVerificacaoAcesso] = useState('')
   const [planoAtual, setPlanoAtual] = useState<string | null>(null)
   const [validoAteAtual, setValidoAteAtual] = useState<string | null>(null)
 
@@ -187,8 +188,20 @@ export default function HomePage() {
           setCarregando(false)
         }
       })
-      .catch(() => {
-        setStatusAssinatura('pendente')
+      .catch((e: any) => {
+        // So trata como "pendente de aprovacao" quando o servidor de fato respondeu isso.
+        // Qualquer outro erro (rede, servidor fora do ar, token invalido etc) mostra o erro real,
+        // em vez de esconder tudo atras da mensagem generica de "acesso nao liberado".
+        if (e.response) {
+          setStatusAssinatura(e.response.data?.status || 'pendente')
+        } else {
+          setStatusAssinatura('erro')
+          setErroVerificacaoAcesso(
+            e.message === 'Network Error'
+              ? 'Não foi possível conectar ao servidor. Verifique sua internet ou tente novamente em instantes.'
+              : e.message || 'Erro desconhecido ao verificar o acesso'
+          )
+        }
         setCarregando(false)
       })
       .finally(() => setVerificandoAcesso(false))
@@ -419,6 +432,35 @@ export default function HomePage() {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <div className="text-muted text-sm">Carregando...</div>
+      </div>
+    )
+  }
+
+  // Erro tecnico de verdade (nao e regra de negocio) - mostra separado, com opcao de tentar de novo
+  if (!ehAdmin && statusAssinatura === 'erro') {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center p-6">
+        <div className="max-w-sm w-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-pink/10 flex items-center justify-center text-3xl mx-auto mb-5">
+            ⚠️
+          </div>
+          <h1 className="text-xl font-bold mb-2">Não foi possível verificar seu acesso</h1>
+          <p className="text-sm text-muted mb-6">{erroVerificacaoAcesso}</p>
+          <div className="flex flex-col gap-2 items-center">
+            <button
+              onClick={() => window.location.reload()}
+              className="grad-btn text-white font-bold py-2.5 px-6 rounded-lg text-sm"
+            >
+              🔄 Tentar novamente
+            </button>
+            <button
+              onClick={sair}
+              className="text-sm text-muted hover:text-primary font-semibold mt-2"
+            >
+              🚪 Sair
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
